@@ -430,7 +430,7 @@ const getFiles = async (req, res) => {
 // };
 const exportTableToExcel = async (req, res) => {
   try {
-    const { id, unsub_days } = req.query;
+    const { id, unsub_days, isEmail } = req.query;
 
     if (!id) {
       return sendResponse({
@@ -440,7 +440,8 @@ const exportTableToExcel = async (req, res) => {
         message: "Id is required!",
       });
     }
-
+    const shouldSendEmail =
+      isEmail === "true" || isEmail === true || isEmail === "1";
     // 1. Fetch file metadata from main DB (including remove_sub, remove_unsub)
     const [fileRows] = await db.execute(
       `SELECT id, file_path, file_name, job_name, response_table_name,
@@ -672,58 +673,73 @@ const exportTableToExcel = async (req, res) => {
     // STEP 11: Send email with Excel attachment
     // ─────────────────────────────────────────────
     // const email = "Nabeel@Webdoc.com.pk";
-    const email = "hamzabhatti021@gmail.com";
+    // ─────────────────────────────────────────────
+    // STEP 11: Send email OR return Excel directly
+    // ─────────────────────────────────────────────
+    if (shouldSendEmail) {
+      const email = "hamzabhatti021@gmail.com";
 
-    const mailResult = await sendMail({
-      to: email,
-      // cc: "m.irfan@webdocoffice.com.pk",
-      subject: `Export: ${uploadedFile.file_name} (${uploadedFile.service})`,
-      html: `
-        <p>Hi,</p>
-        <p>Please find attached the exported data for <strong>${uploadedFile.file_name}</strong>.</p>
-        <ul>
-          <li><strong>Service:</strong> ${uploadedFile.service}</li>
-          <li><strong>Balance Limit:</strong> ${uploadedFile.balance_limit}</li>
-          <li><strong>Total After Balance Filter:</strong> ${responseRows.length}</li>
-          ${uploadedFile.remove_sub == 1 ? `<li><strong>Active Subscribers Removed:</strong> ${subscriberSet.size}</li>` : ""}
-          ${uploadedFile.remove_unsub == 1 ? `<li><strong>Recent Unsubs Removed (last ${unsub_days} days):</strong> ${unsubSet.size}</li>` : ""}
-          <li><strong>Final Records in File:</strong> ${filteredRows.length}</li>
-        </ul>
-        <p>Regards,<br/>WEBDOC System</p>
-      `,
-      attachments: [
-        {
-          filename: fileName,
-          content: excelBuffer,
-          contentType:
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        },
-      ],
-    });
+      const mailResult = await sendMail({
+        to: email,
+        subject: `Export: ${uploadedFile.file_name} (${uploadedFile.service})`,
+        html: `
+          <p>Hi,</p>
+          <p>Please find attached the exported data for <strong>${uploadedFile.file_name}</strong>.</p>
+          <ul>
+            <li><strong>Service:</strong> ${uploadedFile.service}</li>
+            <li><strong>Balance Limit:</strong> ${uploadedFile.balance_limit}</li>
+            <li><strong>Total After Balance Filter:</strong> ${responseRows.length}</li>
+            ${uploadedFile.remove_sub == 1 ? `<li><strong>Active Subscribers Removed:</strong> ${subscriberSet.size}</li>` : ""}
+            ${uploadedFile.remove_unsub == 1 ? `<li><strong>Recent Unsubs Removed (last ${unsub_days} days):</strong> ${unsubSet.size}</li>` : ""}
+            <li><strong>Final Records in File:</strong> ${filteredRows.length}</li>
+          </ul>
+          <p>Regards,<br/>WEBDOC System</p>
+        `,
+        attachments: [
+          {
+            filename: fileName,
+            content: excelBuffer,
+            contentType:
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          },
+        ],
+      });
 
-    if (!mailResult.success) {
+      if (!mailResult.success) {
+        return sendResponse({
+          res,
+          statusCode: 500,
+          success: false,
+          message: "Excel generated but email failed to send",
+          error: mailResult.error,
+        });
+      }
+
       return sendResponse({
         res,
-        statusCode: 500,
-        success: false,
-        message: "Excel generated but email failed to send",
-        error: mailResult.error,
+        statusCode: 200,
+        success: true,
+        message: `Export emailed successfully to ${email}`,
+        data: {
+          totalFromBalanceFilter: responseRows.length,
+          activeSubscribersRemoved: subscriberSet.size,
+          recentUnsubsRemoved: unsubSet.size,
+          finalRecords: filteredRows.length,
+          messageId: mailResult.messageId,
+        },
       });
+    } else {
+      // Return the Excel file directly in the response
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${fileName}"`,
+      );
+      return res.send(excelBuffer);
     }
-
-    return sendResponse({
-      res,
-      statusCode: 200,
-      success: true,
-      message: `Export emailed successfully to ${email}`,
-      data: {
-        totalFromBalanceFilter: responseRows.length,
-        activeSubscribersRemoved: subscriberSet.size,
-        recentUnsubsRemoved: unsubSet.size,
-        finalRecords: filteredRows.length,
-        messageId: mailResult.messageId,
-      },
-    });
   } catch (error) {
     console.error("Export failed:", error);
     return sendResponse({
