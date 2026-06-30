@@ -11,6 +11,8 @@ import {
   X,
   BriefcaseBusiness,
   Wallet,
+  Mail,
+  SendIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import axios from "axios";
@@ -52,7 +54,26 @@ export default function Files() {
   const [selected, setSelected] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [showDrawer, setShowDrawer] = useState(false);
+  const [showEmailDrawer, setShowEmailDrawer] = useState(false);
+  const [emailData, setEmailData] = useState({
+    to: "",
+    cc: "",
+    subject: "",
+    message: "",
+  });
 
+  const handleEmail = (file) => {
+    setSelectedFile(file);
+
+    setEmailData({
+      to: "",
+      cc: "",
+      subject: "",
+      message: "",
+    });
+
+    setShowEmailDrawer(true);
+  };
   const handleView = (file) => {
     console.log(file);
     setSelectedFile({
@@ -71,20 +92,6 @@ export default function Files() {
     return matchSearch && matchStatus;
   });
 
-  const toggleSelect = (id) =>
-    setSelected((s) =>
-      s.includes(id) ? s.filter((x) => x !== id) : [...s, id],
-    );
-
-  const toggleAll = () =>
-    setSelected(
-      selected.length === filtered.length ? [] : filtered.map((f) => f.id),
-    );
-
-  const deleteSelected = () => {
-    setFiles((fs) => fs.filter((f) => !selected.includes(f.id)));
-    setSelected([]);
-  };
   useEffect(() => {
     fetchFiles();
   }, []);
@@ -152,6 +159,35 @@ export default function Files() {
       console.log(error);
     } finally {
       setLoading(false);
+    }
+  };
+  const handleSendEmail = async () => {
+    try {
+      const payload = {
+        id: selectedFile.id,
+        // unsub_days: selectedFile.days,
+        // unsub_remove: selectedFile.removeUnsub ? 1 : 0,
+        to: emailData.to,
+        cc: emailData.cc,
+        subject: emailData.subject,
+        message: emailData.message,
+      };
+
+      const response = await axios.post(
+        `${BASE_URL}/files/send-email`,
+        payload,
+      );
+
+      if (response.data.success) {
+        alert("Email sent successfully!");
+        setShowEmailDrawer(false);
+      } else {
+        alert(response.data.message);
+      }
+    } catch (error) {
+      console.error(error);
+
+      alert(error.response?.data?.message || "Failed to send email.");
     }
   };
   if (loading) return <LoaderSpinner />;
@@ -308,13 +344,23 @@ export default function Files() {
                       </td>
 
                       <td className="px-3 py-3.5">
-                        <button
-                          onClick={() => handleView(file)}
-                          className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
-                        >
-                          <Eye size={15} />
-                          View
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleView(file)}
+                            className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-indigo-600 transition hover:bg-gray-200"
+                          >
+                            <Eye size={15} />
+                            View
+                          </button>
+
+                          <button
+                            onClick={() => handleEmail(file)}
+                            className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 transition hover:bg-blue-100"
+                          >
+                            <Mail size={15} />
+                            Email
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -501,6 +547,132 @@ export default function Files() {
               </div>
             </div>
           )}
+        </div>
+      </>
+      <>
+        {showEmailDrawer && (
+          <div
+            className="fixed inset-0 z-40 bg-black/40"
+            onClick={() => setShowEmailDrawer(false)}
+          />
+        )}
+
+        <div
+          className={`fixed z-50 bg-white shadow-2xl transition-all duration-300
+      inset-x-0 bottom-0  rounded-t-2xl w-[320px]
+      md:top-0 md:right-0 left-auto md:bottom-auto h-full md:w-[420px] md:rounded-none ${
+        showEmailDrawer ? "translate-x-0" : "translate-x-full"
+      }`}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between border-b px-6 py-4">
+            <div>
+              <h2 className="text-lg font-semibold"> Email Template</h2>
+              <p className="text-sm text-slate-500">{selectedFile?.name}</p>
+            </div>
+
+            <button
+              onClick={() => setShowEmailDrawer(false)}
+              className="rounded-lg bg-gray-100 p-2 hover:bg-red-50"
+            >
+              <X size={18} className="text-red-500" />
+            </button>
+          </div>
+
+          {/* Form */}
+          <div className="space-y-5 overflow-y-auto p-6">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                To
+              </label>
+              <input
+                type="email"
+                placeholder="john@example.com"
+                value={emailData.to}
+                onChange={(e) =>
+                  setEmailData((prev) => ({
+                    ...prev,
+                    to: e.target.value,
+                  }))
+                }
+                className="w-full rounded-md border px-3 py-2 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                CC
+              </label>
+              <input
+                type="text"
+                placeholder="john@example.com, jane@example.com"
+                value={emailData.cc}
+                onChange={(e) =>
+                  setEmailData((prev) => ({
+                    ...prev,
+                    cc: e.target.value,
+                  }))
+                }
+                className="w-full rounded-md border px-3 py-2 focus:border-indigo-500 focus:outline-none"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Separate multiple emails with commas.
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Subject
+              </label>
+              <input
+                type="text"
+                value={emailData.subject}
+                placeholder="Enter Subject"
+                onChange={(e) =>
+                  setEmailData((prev) => ({
+                    ...prev,
+                    subject: e.target.value,
+                  }))
+                }
+                className="w-full rounded-md border px-3 py-2 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Message
+              </label>
+              <textarea
+                rows={6}
+                placeholder="Write your email..."
+                value={emailData.message}
+                onChange={(e) =>
+                  setEmailData((prev) => ({
+                    ...prev,
+                    message: e.target.value,
+                  }))
+                }
+                className="w-full resize-none rounded-md border px-3 py-2 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                onClick={() => setShowEmailDrawer(false)}
+                className="rounded-md border px-4 py-2 text-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={handleSendEmail}
+                className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2 text-white hover:bg-indigo-700"
+              >
+                <SendIcon size={16} />
+                Send Email
+              </button>
+            </div>
+          </div>
         </div>
       </>
     </>

@@ -691,7 +691,7 @@ const exportTableToExcel = async (req, res) => {
 };
 const sendExcelToEmail = async (req, res) => {
   try {
-    const { id, unsub_days, unsub_remove } = req.query;
+    const { id, unsub_days, unsub_remove, to, cc, subject, message } = req.body;
 
     if (!id) {
       return sendResponse({
@@ -699,6 +699,14 @@ const sendExcelToEmail = async (req, res) => {
         statusCode: 400,
         success: false,
         message: "Id is required!",
+      });
+    }
+    if (!to) {
+      return sendResponse({
+        res,
+        statusCode: 400,
+        success: false,
+        message: "Email data is Required!",
       });
     }
 
@@ -722,7 +730,7 @@ const sendExcelToEmail = async (req, res) => {
     }
 
     // 2. Validate unsub_days if remove_unsub is true
-    if (uploadedFile.remove_unsub == 1 || unsub_remove == "true") {
+    if (uploadedFile.remove_unsub == 1) {
       if (!unsub_days || isNaN(Number(unsub_days)) || Number(unsub_days) <= 0) {
         return sendResponse({
           res,
@@ -779,7 +787,7 @@ const sendExcelToEmail = async (req, res) => {
       }
     }
 
-    if (uploadedFile.remove_unsub == 1 || unsub_remove == "true") {
+    if (uploadedFile.remove_unsub == 1) {
       const [unsubTableExists] = await servicePool.query(
         `SELECT 1 FROM information_schema.tables
          WHERE table_schema = DATABASE() AND table_name = 'subscriber_unsub' LIMIT 1`,
@@ -936,13 +944,22 @@ const sendExcelToEmail = async (req, res) => {
     // STEP 11: Send email OR return Excel directly
     // ─────────────────────────────────────────────
 
-    const email = "hamzabhatti021@gmail.com";
-
+    // const email = "hamzabhatti021@gmail.com";
+    const ccRecipients = cc
+      ? cc
+          .split(",")
+          .map((email) => email.trim())
+          .filter(Boolean)
+      : [];
     const mailResult = await sendMail({
-      to: email,
-      subject: `Export: ${uploadedFile.file_name} (${uploadedFile.service})`,
+      to: to,
+      cc: ccRecipients,
+      subject:
+        subject ||
+        `Export: ${uploadedFile.file_name} (${uploadedFile.service})`,
       html: `
           <p>Hi,</p>
+         <p>${message.replace(/\n/g, "<br/>")}</p>
           <p>Please find attached the exported data for <strong>${uploadedFile.file_name}</strong>.</p>
           <ul>
             <li><strong>Service:</strong> ${uploadedFile.service}</li>
@@ -978,7 +995,7 @@ const sendExcelToEmail = async (req, res) => {
       res,
       statusCode: 200,
       success: true,
-      message: `Export emailed successfully to ${email}`,
+      message: `Export emailed successfully to ${to}`,
       data: {
         totalFromBalanceFilter: responseRows.length,
         activeSubscribersRemoved: subscriberSet.size,
