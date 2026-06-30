@@ -7,12 +7,16 @@ import {
   Clock,
   AlertCircle,
   RefreshCw,
+  Eye,
+  X,
+  BriefcaseBusiness,
+  Wallet,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { BASE_URL } from "../config";
 import LoaderSpinner from "../components/loader";
-
+import { formatNumber, formatDateTime } from "../helper/formatters";
 const statusConfig = {
   completed: {
     icon: CheckCircle2,
@@ -46,7 +50,13 @@ export default function Files() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [selected, setSelected] = useState([]);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [showDrawer, setShowDrawer] = useState(false);
 
+  const handleView = (file) => {
+    setSelectedFile(file);
+    setShowDrawer(true);
+  };
   const filtered = files.filter((f) => {
     const matchSearch =
       f.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -105,17 +115,18 @@ export default function Files() {
     }
   };
   if (loading) return <LoaderSpinner />;
-
+  console.log("files", filtered);
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Files</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {files.length} uploaded lead files
-          </p>
-        </div>
-        {/* {selected.length > 0 && (
+    <>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">Files</h1>
+            <p className="text-sm text-slate-500 mt-1">
+              {files.length} uploaded lead files
+            </p>
+          </div>
+          {/* {selected.length > 0 && (
           <button
             onClick={deleteSelected}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
@@ -124,159 +135,306 @@ export default function Files() {
             <Trash2 size={15} /> Delete {selected.length} selected
           </button>
         )} */}
-      </div>
-
-      {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search
-            size={15}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-          />
-          <input
-            className="input-field pl-9"
-            placeholder="Search by file or job name…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
         </div>
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
-          {["all", "completed", "running", "scheduled", "error"].map((s) => (
-            <button
-              key={s}
-              onClick={() => setFilterStatus(s)}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold capitalize transition-all
+
+        {/* Filters */}
+        <div className="flex gap-3 flex-wrap">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+            <input
+              className="input-field pl-9"
+              placeholder="Search by file or job name…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
+            {["all", "completed", "running", "scheduled", "error"].map((s) => (
+              <button
+                key={s}
+                onClick={() => setFilterStatus(s)}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold capitalize transition-all
                 ${
                   filterStatus === s
                     ? "bg-indigo-600 text-white shadow-sm"
                     : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                 }`}
-            >
-              {s}
-            </button>
-          ))}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Table */}
-      <div className="card p-0 overflow-hidden">
-        <table className="w-full text-sm min-w-[640px]">
-          <thead>
-            <tr className="border-b border-slate-100 bg-slate-50/70">
-              <th className="w-10 px-4 py-3">
-                <input
-                  type="checkbox"
-                  checked={
-                    selected.length === filtered.length && filtered.length > 0
-                  }
-                  onChange={toggleAll}
-                  className="accent-indigo-600 cursor-pointer"
-                />
-              </th>
-              {[
-                "File",
-                "Job",
-                "Service",
-                "Total",
-                "Processed",
-
-                "Status",
-                "Uploaded",
-                "",
-              ].map((h) => (
-                <th
-                  key={h}
-                  className="text-left text-xs text-slate-400 font-semibold px-3 py-3 uppercase tracking-wider"
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={9}
-                  className="text-center py-12 text-slate-400 text-sm"
-                >
-                  No files match your filter.
-                </td>
-              </tr>
-            ) : (
-              filtered.map((file) => {
-                const cfg = statusConfig[file.status];
-                const Icon = cfg.icon;
-                return (
-                  <tr
-                    key={file.id}
-                    className={`border-b border-slate-100 last:border-0 transition-colors
-                    ${selected.includes(file.id) ? "bg-indigo-50/60" : "hover:bg-slate-50/70"}`}
+        {/* Table */}
+        <div className="card p-0 overflow-x-scroll">
+          <table className="w-full text-sm min-w-[640px]">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50/70">
+                {/* <th className="w-10 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={
+                      selected.length === filtered.length && filtered.length > 0
+                    }
+                    onChange={toggleAll}
+                    className="accent-indigo-600 cursor-pointer"
+                  />
+                </th> */}
+                {[
+                  "File",
+                  "Job",
+                  "Service",
+                  "Bal Limit",
+                  "Total",
+                  "Processed",
+                  "Status",
+                  "Action",
+                ].map((h) => (
+                  <th
+                    key={h}
+                    className="text-left text-xs text-slate-500 font-semibold px-4 py-3 uppercase tracking-wider"
                   >
-                    <td className="px-4 py-3.5">
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(file.id)}
-                        onChange={() => toggleSelect(file.id)}
-                        className="accent-indigo-600 cursor-pointer"
-                      />
-                    </td>
-                    <td className="px-3 py-3.5">
-                      <div className="flex items-center gap-2">
-                        <FileText
-                          size={15}
-                          className="text-indigo-500 flex-shrink-0"
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="text-center py-12 text-slate-400 text-sm"
+                  >
+                    No files match your filter.
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((file) => {
+                  const cfg = statusConfig[file.status];
+                  const Icon = cfg.icon;
+                  return (
+                    <tr
+                      key={file.id}
+                      className={`border-b border-slate-100 last:border-0 transition-colors
+                    ${selected.includes(file.id) ? "bg-indigo-50/60" : "hover:bg-slate-50/70"}`}
+                    >
+                      {/* <td className="px-4 py-3.5">
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(file.id)}
+                          onChange={() => toggleSelect(file.id)}
+                          className="accent-indigo-600 cursor-pointer"
                         />
-                        <span className="text-slate-700 font-medium font-mono text-xs truncate max-w-[140px]">
-                          {file.name}
+                      </td> */}
+                      <td className="px-3 py-3.5">
+                        <div className="flex items-center gap-2">
+                          <FileText
+                            size={15}
+                            className="text-indigo-500 flex-shrink-0"
+                          />
+                          <span className="text-slate-700 font-medium font-mono text-xs truncate max-w-[140px]">
+                            {file.name}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3.5 overflow-hidden whitespace-nowrap text-ellipsis">
+                        {file.job}
+                      </td>
+                      <td className="px-3 py-3.5 ">{file.service}</td>
+                      <td className="px-3 py-3.5 ">{file.balanceLimit}</td>
+                      <td className="px-3 py-3.5 tracking-wider whitespace-nowrap text-slate-700 text-xs font-medium">
+                        {formatNumber(file?.total)}
+                      </td>
+                      <td className="px-3 py-3.5 tracking-wider whitespace-nowrap text-slate-700 text-xs font-medium">
+                        {formatNumber(file?.processed)}
+                      </td>
+                      <td className="px-3 py-3.5">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-xs font-semibold ${cfg.bg} ${cfg.color}`}
+                        >
+                          <Icon
+                            size={11}
+                            className={
+                              file.status === "running" ? "animate-spin" : ""
+                            }
+                          />
+                          {cfg.label}
                         </span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3.5 text-slate-500">{file.job}</td>
-                    <td className="px-3 py-3.5 text-slate-500">
-                      {file.service}
-                    </td>
-                    <td className="px-3 py-3.5 text-slate-700 text-xs font-medium">
-                      {file?.total.toLocaleString()}
-                    </td>
-                    <td className="px-3 py-3.5 text-slate-700 text-xs font-medium">
-                      {file.processed.toLocaleString()}
-                    </td>
-                    <td className="px-3 py-3.5">
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-xs font-semibold ${cfg.bg} ${cfg.color}`}
-                      >
-                        <Icon
-                          size={11}
-                          className={
-                            file.status === "running" ? "animate-spin" : ""
-                          }
-                        />
-                        {cfg.label}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3.5 text-slate-400 text-xs font-mono whitespace-nowrap">
-                      {file.uploaded}
-                    </td>
-                    <td className="px-3 py-3.5">
-                      <button
-                        className="text-slate-400 hover:text-indigo-600 transition-colors p-1 rounded-md hover:bg-indigo-50"
-                        title="Download"
-                      >
-                        <Download size={15} />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                      </td>
 
-      <p className="text-xs text-slate-400 text-center">
-        Showing {filtered.length} of {files.length} files
-      </p>
-    </div>
+                      <td className="px-3 py-3.5">
+                        <button
+                          onClick={() => handleView(file)}
+                          className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
+                        >
+                          <Eye size={15} />
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <p className="text-xs text-slate-400 text-center">
+          Showing {filtered.length} of {files.length} files
+        </p>
+      </div>
+      <>
+        {/* Backdrop */}
+        {showDrawer && (
+          <div
+            className="fixed inset-0 bg-black/40 z-40"
+            onClick={() => setShowDrawer(false)}
+          />
+        )}
+
+        {/* Drawer */}
+        <div
+          className={`fixed z-50 bg-white shadow-2xl transition-all duration-300
+      inset-x-0 bottom-0  rounded-t-2xl w-[320px]
+      md:top-0 md:right-0 left-auto md:bottom-auto h-full md:w-[420px] md:rounded-none
+      ${
+        showDrawer
+          ? "translate-y-0 md:translate-x-0"
+          : "translate-y-full md:translate-y-0 md:translate-x-full"
+      }`}
+        >
+          {/* Header */}
+          <div className="sticky top-0 flex items-center justify-between px-6 py-4 border-b bg-white">
+            <div>
+              <h2 className="text-lg font-semibold capitalize">
+                {selectedFile?.job}
+              </h2>
+              <p className="text-sm text-slate-500">
+                View processing information
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowDrawer(false)}
+              className="p-2 rounded-lg bg-gray-100 text-red-500 hover:bg-red-50"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Content */}
+          {selectedFile && (
+            <div className="p-6 space-y-6 overflow-y-auto h-[calc(90vh-72px)] md:h-[calc(100vh-72px)]">
+              <div className="flex items-center justify-center gap-10">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-lg bg-indigo-100">
+                    <FileText size={18} className="text-indigo-600" />
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-gray-700">File Name</p>
+                    <p className="font-medium break-all">{selectedFile.name}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-lg bg-emerald-100">
+                    <BriefcaseBusiness size={18} className="text-emerald-600" />
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-gray-700">Service</p>
+                    <p>{selectedFile.service}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-lg bg-slate-50 p-4">
+                  <p className="text-sm text-gray-600">Total</p>
+                  <p className="text-lg font-semibold">
+                    {formatNumber(selectedFile.total)}
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-slate-50 p-4">
+                  <p className="text-sm text-gray-600">Processed</p>
+                  <p className="text-lg font-semibold">
+                    {formatNumber(selectedFile.processed)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-6 justify-center">
+                <div>
+                  <p className="text-sm text-gray-600">Scheduled At</p>
+                  <p>{formatDateTime(selectedFile.scheduleTime)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Completed At</p>
+                  <p>{formatDateTime(selectedFile.jobEnd)}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-amber-100">
+                  <Wallet size={18} className="text-amber-600" />
+                </div>
+
+                <div>
+                  <p className="text-xs text-gray-500">Balance Limit</p>
+                  <p className="font-medium">{selectedFile.balanceLimit}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedFile?.removeSub ?? false}
+                    onChange={(e) =>
+                      setSelectedFile((prev) => ({
+                        ...prev,
+                        removeSub: e.target.checked,
+                      }))
+                    }
+                    className="w-4 h-4 accent-indigo-600"
+                  />
+                  <span className="text-sm text-slate-700">
+                    Remove Subscribers
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedFile?.removeUnsub ?? false}
+                    onChange={(e) =>
+                      setSelectedFile((prev) => ({
+                        ...prev,
+                        removeUnsub: e.target.checked,
+                      }))
+                    }
+                    className="w-4 h-4 accent-indigo-600"
+                  />
+                  <span className="text-sm text-slate-700">
+                    Remove Unsubscribers
+                  </span>
+                </label>
+              </div>
+              <div className="flex justify-center">
+                <button className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white font-medium hover:bg-indigo-700 transition-colors">
+                  <Download size={18} />
+                  Download File
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </>
+    </>
   );
 }
