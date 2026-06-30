@@ -54,7 +54,13 @@ export default function Files() {
   const [showDrawer, setShowDrawer] = useState(false);
 
   const handleView = (file) => {
-    setSelectedFile(file);
+    console.log(file);
+    setSelectedFile({
+      ...file,
+      removeUnsub: file.removeUnsub == 1,
+      removeSub: file.removeSub == 1,
+    });
+
     setShowDrawer(true);
   };
   const filtered = files.filter((f) => {
@@ -105,6 +111,7 @@ export default function Files() {
         balanceLimit: file.balance_limit,
         removeSub: file.remove_sub,
         removeUnsub: file.remove_unsub,
+        days: file.days,
       }));
 
       setFiles(mappedFiles);
@@ -114,8 +121,41 @@ export default function Files() {
       setLoading(false);
     }
   };
+  const handleDownload = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get(`${BASE_URL}/files/export`, {
+        params: {
+          id: selectedFile.id,
+          unsub_days: selectedFile.days || 0,
+          unsub_remove: selectedFile.removeUnsub, // matches your query param name now
+        },
+        responseType: "blob",
+      });
+
+      const contentDisposition = response.headers["content-disposition"];
+      let fileName = "export.xlsx";
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (match?.[1]) fileName = match[1];
+      }
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.log(error);
+    } finally {
+      setLoading(false);
+    }
+  };
   if (loading) return <LoaderSpinner />;
-  console.log("files", filtered);
+  console.log("files", selectedFile);
   return (
     <>
       <div className="space-y-6">
@@ -391,17 +431,13 @@ export default function Files() {
               </div>
 
               <div className="space-y-4">
-                <label className="flex items-center gap-3 cursor-pointer">
+                <strong>Applied Filters</strong>
+                <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
                     checked={selectedFile?.removeSub ?? false}
-                    onChange={(e) =>
-                      setSelectedFile((prev) => ({
-                        ...prev,
-                        removeSub: e.target.checked,
-                      }))
-                    }
-                    className="w-4 h-4 accent-indigo-600"
+                    onChange={() => {}}
+                    className="w-4 h-4 accent-indigo-600 pointer-events-none"
                   />
                   <span className="text-sm text-slate-700">
                     Remove Subscribers
@@ -416,6 +452,8 @@ export default function Files() {
                       setSelectedFile((prev) => ({
                         ...prev,
                         removeUnsub: e.target.checked,
+                        // Clear the days when unchecked (optional)
+                        days: e.target.checked ? (prev.days ?? "") : "",
                       }))
                     }
                     className="w-4 h-4 accent-indigo-600"
@@ -424,9 +462,39 @@ export default function Files() {
                     Remove Unsubscribers
                   </span>
                 </label>
+                {selectedFile?.removeUnsub && (
+                  <div className="ml-7">
+                    <label className="block text-sm text-gray-600 mb-1">
+                      Remove unsubscribers older than (days)
+                    </label>
+
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      placeholder="Enter days"
+                      value={selectedFile?.days ?? ""}
+                      onChange={(e) => {
+                        const value = Number(e.target.value);
+
+                        setSelectedFile((prev) => ({
+                          ...prev,
+                          days:
+                            e.target.value === ""
+                              ? ""
+                              : Math.min(Math.max(value, 1), 100),
+                        }));
+                      }}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none"
+                    />
+                  </div>
+                )}
               </div>
               <div className="flex justify-center">
-                <button className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white font-medium hover:bg-indigo-700 transition-colors">
+                <button
+                  onClick={handleDownload}
+                  className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white font-medium hover:bg-indigo-700 transition-colors"
+                >
                   <Download size={18} />
                   Download File
                 </button>
