@@ -537,6 +537,7 @@ const exportTableToExcel = async (req, res) => {
     const balanceLimitInCents = Number(uploadedFile.balance_limit) * 100;
 
     console.log(
+      balanceLimitInCents,
       `Fetching MSISDNs from response table: ${uploadedFile.response_table_name}`,
     );
 
@@ -546,7 +547,7 @@ const exportTableToExcel = async (req, res) => {
        WHERE data->>'$.bal' IS NOT NULL
          AND data->>'$.bal' != 'null'
          AND data->>'$.bal' != ''
-         AND CAST(data->>'$.bal' AS UNSIGNED) >= ?`,
+         AND CAST(data->>'$.bal' AS SIGNED) >= ?`,
       [balanceLimitInCents],
     );
 
@@ -730,17 +731,17 @@ const sendExcelToEmail = async (req, res) => {
     }
 
     // 2. Validate unsub_days if remove_unsub is true
-    if (uploadedFile.remove_unsub == 1) {
-      if (!unsub_days || isNaN(Number(unsub_days)) || Number(unsub_days) <= 0) {
-        return sendResponse({
-          res,
-          statusCode: 400,
-          success: false,
-          message:
-            "unsub_days query param is required and must be a positive number when remove_unsub is enabled",
-        });
-      }
-    }
+    // if (uploadedFile.remove_unsub == 1) {
+    //   if (!unsub_days || isNaN(Number(unsub_days)) || Number(unsub_days) <= 0) {
+    //     return sendResponse({
+    //       res,
+    //       statusCode: 400,
+    //       success: false,
+    //       message:
+    //         "unsub_days query param is required and must be a positive number when remove_unsub is enabled",
+    //     });
+    //   }
+    // }
 
     // 3. Get the correct pool based on service (HIS / HBS / MIS)
     let servicePool;
@@ -815,7 +816,7 @@ const sendExcelToEmail = async (req, res) => {
        WHERE data->>'$.bal' IS NOT NULL
          AND data->>'$.bal' != 'null'
          AND data->>'$.bal' != ''
-         AND CAST(data->>'$.bal' AS UNSIGNED) >= ?`,
+         AND CAST(data->>'$.bal' AS SIGNED) >= ?`,
       [balanceLimitInCents],
     );
 
@@ -866,7 +867,7 @@ const sendExcelToEmail = async (req, res) => {
     const unsubSet = new Set();
 
     if (uploadedFile.remove_unsub == 1) {
-      const days = Number(unsub_days);
+      const days = Number(unsub_days ?? 0);
       console.log(`Applying remove_unsub filter for last ${days} days...`);
 
       for (let i = 0; i < msisdnList.length; i += BATCH_SIZE) {
