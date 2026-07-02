@@ -26,11 +26,11 @@ const statusConfig = {
     bg: "bg-emerald-50 border-emerald-200",
     label: "Completed",
   },
-  running: {
+  processing: {
     icon: RefreshCw,
     color: "text-indigo-700",
     bg: "bg-indigo-50 border-indigo-200",
-    label: "Running",
+    label: "processing",
   },
   scheduled: {
     icon: Clock,
@@ -84,7 +84,7 @@ export default function Files() {
 
     setShowDrawer(true);
   };
-  const filtered = files.filter((f) => {
+  const filtered = files?.filter((f) => {
     const matchSearch =
       f.name.toLowerCase().includes(search.toLowerCase()) ||
       f.job.toLowerCase().includes(search.toLowerCase());
@@ -228,20 +228,22 @@ export default function Files() {
             />
           </div>
           <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
-            {["all", "completed", "running", "scheduled", "error"].map((s) => (
-              <button
-                key={s}
-                onClick={() => setFilterStatus(s)}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold capitalize transition-all
+            {["all", "completed", "processing", "scheduled", "error"].map(
+              (s) => (
+                <button
+                  key={s}
+                  onClick={() => setFilterStatus(s)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold capitalize transition-all
                 ${
                   filterStatus === s
                     ? "bg-indigo-600 text-white shadow-sm"
                     : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                 }`}
-              >
-                {s}
-              </button>
-            ))}
+                >
+                  {s}
+                </button>
+              ),
+            )}
           </div>
         </div>
 
@@ -280,7 +282,7 @@ export default function Files() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
+              {filtered?.length === 0 ? (
                 <tr>
                   <td
                     colSpan={9}
@@ -290,9 +292,10 @@ export default function Files() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((file) => {
+                filtered?.map((file) => {
                   const cfg = statusConfig[file.status];
-                  const Icon = cfg.icon;
+                  console.log("cfg", cfg, file.status);
+                  const Icon = cfg?.icon;
                   return (
                     <tr
                       key={file.id}
@@ -331,15 +334,15 @@ export default function Files() {
                       </td>
                       <td className="px-3 py-3.5">
                         <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-xs font-semibold ${cfg.bg} ${cfg.color}`}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-xs font-semibold ${cfg?.bg} ${cfg?.color}`}
                         >
                           <Icon
                             size={11}
                             className={
-                              file.status === "running" ? "animate-spin" : ""
+                              file.status === "processing" ? "animate-spin" : ""
                             }
                           />
-                          {cfg.label}
+                          {cfg?.label}
                         </span>
                       </td>
 
@@ -355,7 +358,9 @@ export default function Files() {
 
                           <button
                             onClick={() => handleEmail(file)}
-                            className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 transition hover:bg-blue-100"
+                            className={`   ${file.status !== "completed" ? "hidden" : "block"}
+                            inline-flex items-center gap-1 rounded-md bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 transition hover:bg-blue-100
+                        `}
                           >
                             <Mail size={15} />
                             Email
@@ -462,7 +467,11 @@ export default function Files() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Completed At</p>
-                  <p>{formatDateTime(selectedFile.jobEnd)}</p>
+                  <p>
+                    {selectedFile.jobEnd
+                      ? formatDateTime(selectedFile.jobEnd)
+                      : "Not completed yet"}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -539,7 +548,8 @@ export default function Files() {
               <div className="flex justify-center">
                 <button
                   onClick={handleDownload}
-                  className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white font-medium hover:bg-indigo-700 transition-colors"
+                  className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                  disabled={selectedFile?.status !== "completed"}
                 >
                   <Download size={18} />
                   Download File
@@ -666,7 +676,9 @@ export default function Files() {
 
               <button
                 onClick={handleSendEmail}
-                className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2 text-white hover:bg-indigo-700"
+                className={
+                  "inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2 text-white hover:bg-indigo-700"
+                }
               >
                 <SendIcon size={16} />
                 Send Email

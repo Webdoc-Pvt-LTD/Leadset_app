@@ -37,8 +37,16 @@ const countFileRecords = (filePath) => {
 };
 const uploadFile = async (req, res) => {
   try {
-    const { jobName, scheduleTime, balance_limit, service } = req.body;
-    console.log(req.body);
+    const {
+      jobName,
+      scheduleTime,
+      balance_limit,
+      service,
+      remove_sub,
+      remove_unsub,
+      days,
+    } = req.body;
+
     if (!req.file) {
       return sendResponse({
         res,
@@ -55,6 +63,7 @@ const uploadFile = async (req, res) => {
         statusCode: 400,
       });
     }
+    const finalDays = remove_unsub ? days : 0;
     const filePath = path.resolve(req.file.path);
     const fileName = req.file.originalname;
     const total_record = await countFileRecords(filePath);
@@ -97,10 +106,13 @@ const uploadFile = async (req, res) => {
     total_record,
     balance_limit,
     service,
+    remove_sub,
+    remove_unsub,
+    days,
     upload_date,
     status
   )
-  VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 'PENDING')
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), 'PENDING')
   `,
       [
         fileName,
@@ -110,6 +122,9 @@ const uploadFile = async (req, res) => {
         total_record,
         balanceLimitDecimal,
         service || null,
+        remove_sub ? 1 : 0,
+        remove_unsub ? 1 : 0,
+        finalDays,
       ],
     );
 

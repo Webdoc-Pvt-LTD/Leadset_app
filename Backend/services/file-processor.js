@@ -216,7 +216,7 @@ const jobBudget = require("./job-manager");
 // notes) and fewer DB round-trips, at the cost of reprocessing more records
 // if a crash happens mid-batch. 1000 is a reasonable balance for sub-150ms
 // API latency; drop it back toward 300 if your latency is higher/jitterier.
-const BATCH_SIZE = Number(process.env.PROCESS_BATCH_SIZE) || 1000;
+const BATCH_SIZE = Number(process.env.PROCESS_BATCH_SIZE) || 1500;
 const HTTP_TIMEOUT_MS = Number(process.env.BALANCE_API_TIMEOUT_MS) || 8000;
 const HTTP_MAX_RETRIES = 3;
 const BALANCE_API_BASE =
