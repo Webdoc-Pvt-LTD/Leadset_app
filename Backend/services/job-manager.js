@@ -86,5 +86,5 @@ class JobBudgetManager {
 // "10" — e.g. if avg latency is 150ms and you need 278 rec/s, set this to
 // ~45+ . Tune upward until the downstream API's error rate starts climbing.
 module.exports = new JobBudgetManager(
-  Number(process.env.TOTAL_WORKER_BUDGET) || 60,
+  Number(process.env.TOTAL_WORKER_BUDGET) || 120,
 );

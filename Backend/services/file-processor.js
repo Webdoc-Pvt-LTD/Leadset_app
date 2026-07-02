@@ -216,7 +216,7 @@ const jobBudget = require("./job-manager");
 // notes) and fewer DB round-trips, at the cost of reprocessing more records
 // if a crash happens mid-batch. 1000 is a reasonable balance for sub-150ms
 // API latency; drop it back toward 300 if your latency is higher/jitterier.
-const BATCH_SIZE = Number(process.env.PROCESS_BATCH_SIZE) || 1500;
+const BATCH_SIZE = Number(process.env.PROCESS_BATCH_SIZE) || 1200;
 const HTTP_TIMEOUT_MS = Number(process.env.BALANCE_API_TIMEOUT_MS) || 8000;
 const HTTP_MAX_RETRIES = 3;
 const BALANCE_API_BASE =
@@ -272,7 +272,7 @@ async function processBatch(batch, tableName, semaphore) {
   let successCount = 0;
   let failCount = 0;
   const results = [];
-
+  const failures = [];
   await Promise.all(
     batch.map((msisdn) =>
       semaphore.run(async () => {
@@ -282,6 +282,7 @@ async function processBatch(batch, tableName, semaphore) {
           successCount++;
         } catch (err) {
           failCount++;
+          failures.push({ msisdn, error: err.message });
           console.error(`❌ Failed for ${msisdn}: ${err.message}`);
         }
       }),
@@ -299,7 +300,12 @@ async function processBatch(batch, tableName, semaphore) {
   console.log(
     `📊 Batch result → ✅ ${successCount} success, ❌ ${failCount} failed`,
   );
-
+  if (failures.length > 0) {
+    console.log(
+      `🔍 Failed MSISDNs this batch:`,
+      failures.map((f) => f.msisdn),
+    );
+  }
   return { successCount, failCount };
 }
 

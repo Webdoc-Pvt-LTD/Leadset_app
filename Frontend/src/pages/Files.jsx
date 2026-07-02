@@ -32,11 +32,11 @@ const statusConfig = {
     bg: "bg-indigo-50 border-indigo-200",
     label: "processing",
   },
-  scheduled: {
+  pending: {
     icon: Clock,
     color: "text-amber-700",
     bg: "bg-amber-50 border-amber-200",
-    label: "Scheduled",
+    label: "pending",
   },
   error: {
     icon: AlertCircle,
@@ -228,22 +228,20 @@ export default function Files() {
             />
           </div>
           <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
-            {["all", "completed", "processing", "scheduled", "error"].map(
-              (s) => (
-                <button
-                  key={s}
-                  onClick={() => setFilterStatus(s)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-semibold capitalize transition-all
+            {["all", "completed", "processing", "pending", "error"].map((s) => (
+              <button
+                key={s}
+                onClick={() => setFilterStatus(s)}
+                className={`px-3 py-1.5 rounded-md text-xs font-semibold capitalize transition-all
                 ${
                   filterStatus === s
                     ? "bg-indigo-600 text-white shadow-sm"
                     : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                 }`}
-                >
-                  {s}
-                </button>
-              ),
-            )}
+              >
+                {s}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -321,7 +319,7 @@ export default function Files() {
                           </span>
                         </div>
                       </td>
-                      <td className="px-3 py-3.5 overflow-hidden whitespace-nowrap text-ellipsis">
+                      <td className="px-3 py-3.5 overflow-hidden max-w-[130px] truncate whitespace-nowrap text-ellipsis ">
                         {file.job}
                       </td>
                       <td className="px-3 py-3.5 ">{file.service}</td>
@@ -350,7 +348,8 @@ export default function Files() {
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handleView(file)}
-                            className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium text-indigo-600 transition hover:bg-gray-200"
+                            className={`${file.status === "pending" ? "hidden" : "block"} inline-flex items-center gap-1 rounded-md bg-gray-100 px-3 py-1.5 text-xs font-medium
+                               text-indigo-600 transition hover:bg-gray-200`}
                           >
                             <Eye size={15} />
                             View
