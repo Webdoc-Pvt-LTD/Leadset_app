@@ -55,7 +55,7 @@ export default function Files() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [showEmailDrawer, setShowEmailDrawer] = useState(false);
-  const [sendEmail, setSendEmail] = useState(false);
+
   const [emailData, setEmailData] = useState({
     to: "",
     cc: "",
@@ -129,7 +129,7 @@ export default function Files() {
       setLoading(false);
     }
   };
-  const handleDownload = async () => {
+  const handleDownload = async (sendEmailFlag) => {
     try {
       setLoading(true);
       const response = await axios.post(
@@ -139,7 +139,7 @@ export default function Files() {
           unsub_days: selectedFile.days || 0,
           unsub_remove: selectedFile.removeUnsub,
           sub_remove: selectedFile.removeSub,
-          send_email: sendEmail ? 1 : 0,
+          send_email: sendEmailFlag,
           balance_limit: selectedFile.balanceLimit,
         },
         {
@@ -581,7 +581,7 @@ export default function Files() {
               </div>
               <div className="flex flex-wrap gap-4 justify-center md:gap-0 md:justify-between items-center ">
                 <button
-                  onClick={handleDownload}
+                  onClick={() => handleDownload(false)}
                   className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
                   disabled={
                     selectedFile?.status !== "completed"
@@ -592,10 +592,7 @@ export default function Files() {
                   Download File
                 </button>
                 <button
-                  onClick={() => {
-                    setSendEmail(true);
-                    handleDownload();
-                  }}
+                  onClick={() => handleDownload(true)}
                   className={
                     "inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white hover:bg-indigo-700"
                   }

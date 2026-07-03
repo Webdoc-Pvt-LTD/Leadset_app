@@ -694,7 +694,7 @@ const exportTableToExcel = async (req, res) => {
     // ─────────────────────────────────────────────
     // STEP 11: Send Email
     // ─────────────────────────────────────────────
-    if (send_email == 1) {
+    if (send_email) {
       const email = "hamzabhatti021@gmail.com";
       const mailResult = await sendMail({
         to: email,
