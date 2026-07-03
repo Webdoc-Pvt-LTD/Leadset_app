@@ -12,7 +12,7 @@ const router = express.Router();
 
 router.post("/upload", upload.single("file"), uploadFile);
 router.get("/all", getFiles);
-router.get("/export", exportTableToExcel);
+router.post("/export", exportTableToExcel);
 router.post("/send-email", sendExcelToEmail);
 
 module.exports = router;

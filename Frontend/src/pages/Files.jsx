@@ -55,6 +55,7 @@ export default function Files() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [showEmailDrawer, setShowEmailDrawer] = useState(false);
+  const [sendEmail, setSendEmail] = useState(false);
   const [emailData, setEmailData] = useState({
     to: "",
     cc: "",
@@ -131,17 +132,24 @@ export default function Files() {
   const handleDownload = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`${BASE_URL}/files/export`, {
-        params: {
+      const response = await axios.post(
+        `${BASE_URL}/files/export`,
+        {
           id: selectedFile.id,
           unsub_days: selectedFile.days || 0,
-          unsub_remove: selectedFile.removeUnsub, // matches your query param name now
+          unsub_remove: selectedFile.removeUnsub,
+          sub_remove: selectedFile.removeSub,
+          send_email: sendEmail ? 1 : 0,
+          balance_limit: selectedFile.balanceLimit,
         },
-        responseType: "blob",
-      });
+        {
+          responseType: "blob",
+        },
+      );
 
       const contentDisposition = response.headers["content-disposition"];
-      let fileName = "export.xlsx";
+      const baseName = selectedFile.name.replace(/\.[^/.]+$/, "");
+      const fileName = `export_${baseName}.xlsx`;
       if (contentDisposition) {
         const match = contentDisposition.match(/filename="?([^"]+)"?/);
         if (match?.[1]) fileName = match[1];
@@ -355,7 +363,7 @@ export default function Files() {
                             View
                           </button>
 
-                          <button
+                          {/* <button
                             onClick={() => handleEmail(file)}
                             className={`   ${file.status !== "completed" ? "hidden" : "block"}
                             inline-flex items-center gap-1 rounded-md bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 transition hover:bg-blue-100
@@ -363,7 +371,7 @@ export default function Files() {
                           >
                             <Mail size={15} />
                             Email
-                          </button>
+                          </button> */}
                         </div>
                       </td>
                     </tr>
@@ -478,9 +486,31 @@ export default function Files() {
                   <Wallet size={18} className="text-amber-600" />
                 </div>
 
-                <div>
+                <div className="flex-1">
                   <p className="text-xs text-gray-500">Balance Limit</p>
-                  <p className="font-medium">{selectedFile.balanceLimit}</p>
+                  <input
+                    type="number"
+                    value={selectedFile.balanceLimit}
+                    onChange={(e) =>
+                      setSelectedFile({
+                        ...selectedFile,
+                        balanceLimit: e.target.value,
+                      })
+                    }
+                    onBlur={() => {
+                      let value = Number(selectedFile.balanceLimit);
+
+                      if (isNaN(value)) value = 10;
+                      if (value < 10) value = 10;
+                      if (value > 100) value = 100;
+
+                      setSelectedFile({
+                        ...selectedFile,
+                        balanceLimit: value,
+                      });
+                    }}
+                    className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
+                  />
                 </div>
               </div>
 
@@ -490,8 +520,13 @@ export default function Files() {
                   <input
                     type="checkbox"
                     checked={selectedFile?.removeSub ?? false}
-                    onChange={() => {}}
-                    className="w-4 h-4 accent-indigo-600 pointer-events-none"
+                    onChange={(e) =>
+                      setSelectedFile((prev) => ({
+                        ...prev,
+                        removeSub: e.target.checked,
+                      }))
+                    }
+                    className="w-4 h-4 accent-indigo-600"
                   />
                   <span className="text-sm text-slate-700">
                     Remove Subscribers
@@ -544,14 +579,33 @@ export default function Files() {
                   </div>
                 )}
               </div>
-              <div className="flex justify-center">
+              <div className="flex flex-wrap gap-4 justify-center md:gap-0 md:justify-between items-center ">
                 <button
                   onClick={handleDownload}
                   className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
-                  disabled={selectedFile?.status !== "completed"}
+                  disabled={
+                    selectedFile?.status !== "completed"
+                    // || !selectedFile?.days
+                  }
                 >
                   <Download size={18} />
                   Download File
+                </button>
+                <button
+                  onClick={() => {
+                    setSendEmail(true);
+                    handleDownload();
+                  }}
+                  className={
+                    "inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white hover:bg-indigo-700"
+                  }
+                  disabled={
+                    selectedFile?.status !== "completed"
+                    // || !selectedFile?.days
+                  }
+                >
+                  <SendIcon size={16} />
+                  Send Email
                 </button>
               </div>
             </div>
