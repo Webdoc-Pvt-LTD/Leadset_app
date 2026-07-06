@@ -3,6 +3,10 @@ const http = require("http");
 const fs = require("fs");
 const { queryWithRetry, sleep } = require("../utils/db-retry");
 const jobBudget = require("./job-manager");
+const { getPoolByService } = require("../config/subscriber-connection");
+const db = require("../config/connection");
+const ExcelJS = require("exceljs");
+const { sendMail } = require("../services/mailer");
 
 // Larger batches mean fewer "stall" gaps between batches (see file-processor
 // notes) and fewer DB round-trips, at the cost of reprocessing more records
@@ -273,24 +277,63 @@ async function SendEmailResults(job, tableName) {
     const BATCH_SIZE = 1000;
     const subscriberSet = new Set();
 
-    for (let i = 0; i < msisdnList.length; i += BATCH_SIZE) {
-      const batch = msisdnList.slice(i, i + BATCH_SIZE);
-      const placeholders = batch.map(() => "?").join(", ");
+    if (job.remove_sub == 1) {
+      console.log("Applying remove_sub filter...");
 
-      const [subscriberRows] = await servicePool.query(
-        `SELECT cellno FROM subscriber WHERE cellno IN (${placeholders})`,
-        batch,
-      );
+      for (let i = 0; i < msisdnList.length; i += BATCH_SIZE) {
+        const batch = msisdnList.slice(i, i + BATCH_SIZE);
+        const placeholders = batch.map(() => "?").join(", ");
 
-      subscriberRows.forEach((row) => {
-        const normalized = String(row.cellno).replace(/^0/, "");
-        subscriberSet.add(normalized);
-      });
+        const [subRows] = await servicePool.query(
+          `SELECT cellno FROM subscriber
+           WHERE cellno IN (${placeholders})
+             AND unsub_dt IS NULL`, // active subscribers only
+          batch,
+        );
+
+        subRows.forEach((row) => {
+          subscriberSet.add(String(row.cellno).replace(/^0/, ""));
+        });
+      }
+
+      console.log(`Active subscribers to remove: ${subscriberSet.size}`);
     }
 
-    const filteredRows = responseRows.filter(
-      (row) => !subscriberSet.has(String(row.msisdn)),
-    );
+    // ─────────────────────────────────────────────
+    // STEP 8: Filter recently unsubscribed (remove_unsub)
+    // ─────────────────────────────────────────────
+    const unsubSet = new Set();
+
+    if (job.remove_unsub == 1) {
+      const days = Number(job.days ?? 0);
+      console.log(`Applying remove_unsub filter for last ${days} days...`);
+
+      for (let i = 0; i < msisdnList.length; i += BATCH_SIZE) {
+        const batch = msisdnList.slice(i, i + BATCH_SIZE);
+        const placeholders = batch.map(() => "?").join(", ");
+
+        // Fetch records unsubscribed within the last N days
+        const [unsubRows] = await servicePool.query(
+          `SELECT cellno FROM subscriber_unsub
+           WHERE cellno IN (${placeholders})
+             AND unsub_dt >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
+          [...batch, days],
+        );
+
+        unsubRows.forEach((row) => {
+          unsubSet.add(String(row.cellno).replace(/^0/, ""));
+        });
+      }
+
+      console.log(`Recently unsubscribed to remove: ${unsubSet.size}`);
+    }
+
+    const filteredRows = responseRows.filter((row) => {
+      const msisdn = String(row.msisdn);
+      if (subscriberSet.has(msisdn)) return false; // remove active sub
+      if (unsubSet.has(msisdn)) return false; // remove recent unsub
+      return true;
+    });
 
     if (filteredRows.length === 0) {
       console.log("No records left after subscriber filtering, skipping email");
@@ -318,11 +361,11 @@ async function SendEmailResults(job, tableName) {
 
     const excelBuffer = await workbook.xlsx.writeBuffer();
     const fileName = `${job.service}_${tableName}_export.xlsx`;
-    const email = "Nabeel@Webdoc.com.pk";
+    const email = "awais@Webdoc.com.pk";
 
     const mailResult = await sendMail({
       to: email,
-      cc: "m.irfan@webdocoffice.com.pk",
+      cc: "hamzabhatti021@gmail.com",
       subject: `Export: ${job.file_name} (${job.service})`,
       html: `
         <p>Hi,</p>
