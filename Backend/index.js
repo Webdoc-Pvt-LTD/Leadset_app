@@ -4,6 +4,7 @@ require("./services/scheduler");
 const { sendResponse } = require("./lib/api-response");
 const fileRoutes = require("./routes/file-routes");
 const dashboardRoutes = require("./routes/dashboard-routes");
+const centerRoutes = require("./routes/center-routes");
 const app = express();
 const cors = require("cors");
 
@@ -21,7 +22,7 @@ app.get("/", (req, res) => {
 });
 app.use("/api/files", fileRoutes);
 app.use("/api/dashboard", dashboardRoutes);
-
+app.use("/api/centers", centerRoutes);
 app.use((req, res) => {
   return sendResponse({
     res,
