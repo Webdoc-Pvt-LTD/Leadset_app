@@ -31,42 +31,72 @@ const getCenters = async (req, res) => {
     });
   }
 };
-const getCenterServices = async (req, res) => {
+const createCenter = async (req, res) => {
   try {
-    const { center_id } = req.params;
+    const { name } = req.body;
 
+    // Validation
+    if (!name) {
+      return sendResponse({
+        res,
+        success: false,
+        message: "Center name is required",
+        statusCode: 400,
+      });
+    }
+
+    // Check duplicate center
+    const [existingCenter] = await db.query(
+      `SELECT id FROM centers WHERE name = ?`,
+      [name],
+    );
+
+    if (existingCenter.length > 0) {
+      return sendResponse({
+        res,
+        success: false,
+        message: "Center already exists",
+        statusCode: 409,
+      });
+    }
+
+    // Insert center
     const query = `
-      SELECT
-        id,
+      INSERT INTO centers
+      (
         name,
-        center_id
-      FROM services
-      WHERE center_id = ?
-      ORDER BY id DESC
+        is_active
+      )
+      VALUES (?, ?)
     `;
 
-    const [rows] = await db.query(query, [center_id]);
+    const [result] = await db.query(query, [name, 1]);
 
     return sendResponse({
       res,
       success: true,
-      message: "Services fetched successfully",
-      statusCode: 200,
-      data: rows,
+      message: "Center created successfully",
+      statusCode: 201,
+      data: {
+        id: result.insertId,
+        name,
+        is_active: 1,
+      },
     });
   } catch (error) {
-    console.error("Error fetching center services:", error);
+    console.error("Error creating center:", error);
 
     return sendResponse({
       res,
       success: false,
-      message: "Failed to fetch services",
+      message: "Failed to create center",
       statusCode: 500,
       error: error.message,
     });
   }
 };
+
 module.exports = {
   getCenters,
-  getCenterServices,
+  createCenter,
 };
