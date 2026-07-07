@@ -149,7 +149,7 @@ export default function Files() {
 
       const contentDisposition = response.headers["content-disposition"];
       const baseName = selectedFile.name.replace(/\.[^/.]+$/, "");
-      const fileName = `export_${baseName}.xlsx`;
+      let fileName = `export_${baseName}.xlsx`;
       if (contentDisposition) {
         const match = contentDisposition.match(/filename="?([^"]+)"?/);
         if (match?.[1]) fileName = match[1];
