@@ -5,7 +5,8 @@ const getCenters = async (req, res) => {
     const query = `
       SELECT
         id,
-        name
+        name,
+        is_active
       FROM centers
       ORDER BY id DESC
     `;

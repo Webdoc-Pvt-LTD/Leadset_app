@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   UploadCloud,
   FileText,
@@ -19,7 +19,10 @@ const initialForm = {
   jobName: "",
   scheduleTime: "",
   balance_limit: "",
-  service: "",
+  service: {
+    id: "",
+    name: "",
+  },
   remove_sub: true,
   remove_unsub: false,
   days: "",
@@ -31,6 +34,7 @@ export default function Upload() {
   const [dragOver, setDragOver] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState({});
+  const [services, setServices] = useState([]);
   const fileRef = useRef();
 
   const set = (key, value) => {
@@ -75,7 +79,7 @@ export default function Upload() {
       formData.append("jobName", form.jobName);
       formData.append("scheduleTime", form.scheduleTime);
       formData.append("balance_limit", form.balance_limit);
-      formData.append("service", form.service);
+      formData.append("service", form.service.name);
       formData.append("remove_sub", form.remove_sub);
       formData.append("remove_unsub", form.remove_unsub);
       formData.append("days", form.days);
@@ -137,7 +141,21 @@ export default function Upload() {
       </div>
     </label>
   );
+  useEffect(() => {
+    const fetchServices = async () => {
+      try {
+        const response = await axios.get(`${BASE_URL}/services/all`);
 
+        if (response.data.success) {
+          setServices(response.data.data);
+        }
+      } catch (error) {
+        console.error("Error fetching services:", error);
+      }
+    };
+
+    fetchServices();
+  }, []);
   if (submitted) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
@@ -260,18 +278,30 @@ export default function Upload() {
 
           <div>
             <label className="label">Service</label>
+
             <select
               className="input-field"
-              value={form.service}
-              onChange={(e) => set("service", e.target.value)}
+              value={form.service.id}
+              onChange={(e) => {
+                const selectedService = services.find(
+                  (service) => service.id === Number(e.target.value),
+                );
+
+                set("service", {
+                  id: selectedService.id,
+                  name: selectedService.name,
+                });
+              }}
             >
               <option value="">Select a service…</option>
-              {SERVICES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
+
+              {services.map((service) => (
+                <option key={service.id} value={service.id}>
+                  {service.name}
                 </option>
               ))}
             </select>
+
             {errors.service && (
               <p className="text-xs text-red-500 mt-1.5">{errors.service}</p>
             )}
