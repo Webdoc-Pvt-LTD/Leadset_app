@@ -192,7 +192,9 @@ const assignServiceToCenter = async (req, res) => {
   try {
     const { service_id, assignments } = req.body;
 
-    if (!service_id || !assignments?.length) {
+    // `assignments` must be an array. An EMPTY array is valid — it means
+    // "unassign every center from this service" (user removed all rows in UI).
+    if (!service_id || !Array.isArray(assignments)) {
       return sendResponse({
         res,
         success: false,
@@ -204,6 +206,81 @@ const assignServiceToCenter = async (req, res) => {
     await connection.beginTransaction();
 
     /*
+      Case: user removed every center for this service.
+      Just wipe existing rows and return early.
+    */
+    if (assignments.length === 0) {
+      await connection.query(
+        `DELETE FROM center_service_assignment WHERE service_id = ?`,
+        [service_id],
+      );
+
+      await connection.commit();
+
+      return sendResponse({
+        res,
+        success: true,
+        message: "All center allocations removed for this service",
+        statusCode: 200,
+        data: { total_assigned: 0, remaining: 100 },
+      });
+    }
+
+    /*
+      Validate each row: center_id present, percentage_quota a valid
+      number between 0-100, and no duplicate center_id in the payload.
+    */
+    const seenCenters = new Set();
+
+    for (const item of assignments) {
+      const { center_id, percentage_quota } = item;
+
+      if (
+        !center_id ||
+        percentage_quota === undefined ||
+        percentage_quota === null ||
+        percentage_quota === ""
+      ) {
+        await connection.rollback();
+
+        return sendResponse({
+          res,
+          success: false,
+          message: "Invalid assignment data",
+          statusCode: 400,
+        });
+      }
+
+      const quotaNum = Number(percentage_quota);
+
+      if (Number.isNaN(quotaNum) || quotaNum < 0 || quotaNum > 100) {
+        await connection.rollback();
+
+        return sendResponse({
+          res,
+          success: false,
+          message: `Invalid quota value for center ${center_id}`,
+          statusCode: 400,
+        });
+      }
+
+      const centerKey = Number(center_id);
+
+      if (seenCenters.has(centerKey)) {
+        await connection.rollback();
+
+        return sendResponse({
+          res,
+          success: false,
+          message: "Duplicate center in assignment list",
+          statusCode: 400,
+        });
+      }
+
+      seenCenters.add(centerKey);
+    }
+
+    /*
       Check total service quota from payload
     */
 
@@ -212,20 +289,25 @@ const assignServiceToCenter = async (req, res) => {
       0,
     );
 
-    if (requestTotal > 100) {
+    const roundedTotal = Number(requestTotal.toFixed(2));
+
+    if (roundedTotal > 100) {
       await connection.rollback();
 
       return sendResponse({
         res,
         success: false,
-        message: "Total quota cannot exceed 100%",
+        message: `Total quota cannot exceed 100%. You are trying to assign ${roundedTotal}%`,
         statusCode: 400,
       });
     }
 
     /*
-      Check existing quota of this service
-      excluding centers coming in payload
+      Check existing quota of this service, excluding centers
+      coming in the payload. In the normal flow this will be 0,
+      since the UI always sends the FULL current assignment list
+      for the service — this is a safety net against race conditions
+      (e.g. two admins editing the same service at once).
     */
 
     const centerIds = assignments.map((item) => item.center_id);
@@ -248,7 +330,7 @@ const assignServiceToCenter = async (req, res) => {
 
     const alreadyAssigned = Number(existingQuota[0].total_quota || 0);
 
-    const finalQuota = alreadyAssigned + requestTotal;
+    const finalQuota = Number((alreadyAssigned + roundedTotal).toFixed(2));
 
     if (finalQuota > 100) {
       await connection.rollback();
@@ -256,10 +338,28 @@ const assignServiceToCenter = async (req, res) => {
       return sendResponse({
         res,
         success: false,
-        message: `Service quota exceeded. Already assigned ${alreadyAssigned}%. Remaining ${100 - alreadyAssigned}%`,
+        message: `Service quota exceeded. Other centers already hold ${alreadyAssigned}%, leaving only ${(100 - alreadyAssigned).toFixed(2)}% available.`,
         statusCode: 400,
       });
     }
+
+    /*
+      Remove rows for centers that used to be assigned to this service
+      but are no longer present in the incoming payload (user hit
+      "Remove" in the UI). Without this step, those rows stay in the
+      table forever and keep silently eating into the 100% quota.
+    */
+
+    await connection.query(
+      `
+      DELETE FROM center_service_assignment
+
+      WHERE service_id = ?
+
+      AND center_id NOT IN (${placeholders})
+      `,
+      [service_id, ...centerIds],
+    );
 
     /*
       Insert / Update assignments
@@ -267,17 +367,6 @@ const assignServiceToCenter = async (req, res) => {
 
     for (const item of assignments) {
       const { center_id, percentage_quota, poc_email, cc_email } = item;
-
-      if (!center_id || percentage_quota === undefined) {
-        await connection.rollback();
-
-        return sendResponse({
-          res,
-          success: false,
-          message: "Invalid assignment data",
-          statusCode: 400,
-        });
-      }
 
       const [existing] = await connection.query(
         `
@@ -337,6 +426,10 @@ const assignServiceToCenter = async (req, res) => {
       success: true,
       message: "Service center allocation saved successfully",
       statusCode: 200,
+      data: {
+        total_assigned: roundedTotal,
+        remaining: Number((100 - roundedTotal).toFixed(2)),
+      },
     });
   } catch (error) {
     await connection.rollback();
@@ -354,6 +447,8 @@ const assignServiceToCenter = async (req, res) => {
     connection.release();
   }
 };
+
+module.exports = { assignServiceToCenter };
 
 const getCenterAssignments = async (req, res) => {
   try {

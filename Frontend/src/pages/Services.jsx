@@ -1,4 +1,4 @@
-import { Search, Plus, Briefcase } from "lucide-react";
+import { Search, Plus, Briefcase, AlertTriangle } from "lucide-react";
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { BASE_URL } from "../config";
@@ -18,6 +18,10 @@ export default function Services() {
   const [remainingQuota, setRemainingQuota] = useState(100);
 
   const [assignments, setAssignments] = useState([]);
+  const [saving, setSaving] = useState(false);
+
+  const isOverQuota = assignedQuota > 100;
+  const isFullyAllocated = assignedQuota === 100;
 
   /*
     Fetch Services
@@ -59,6 +63,23 @@ export default function Services() {
     fetchServices();
     fetchCenters();
   }, []);
+
+  /*
+    Recompute assigned/remaining quota from an assignments array.
+    Centralized so every mutation path (add/remove/edit) stays in sync.
+  */
+
+  const recalcQuota = (list) => {
+    const total = list.reduce(
+      (sum, item) => sum + Number(item.percentage_quota || 0),
+      0,
+    );
+
+    const rounded = Number(total.toFixed(2));
+
+    setAssignedQuota(rounded);
+    setRemainingQuota(Number((100 - rounded).toFixed(2)));
+  };
 
   /*
     Open Drawer
@@ -135,6 +156,17 @@ export default function Services() {
   };
 
   /*
+    Remove Center
+  */
+
+  const removeCenter = (index) => {
+    const updated = assignments.filter((_, i) => i !== index);
+
+    setAssignments(updated);
+    recalcQuota(updated);
+  };
+
+  /*
     Update quota
   */
 
@@ -144,15 +176,7 @@ export default function Services() {
     updated[index].percentage_quota = value;
 
     setAssignments(updated);
-
-    const total = updated.reduce(
-      (sum, item) => sum + Number(item.percentage_quota || 0),
-      0,
-    );
-
-    setAssignedQuota(Number(total.toFixed(2)));
-
-    setRemainingQuota(Number((100 - total).toFixed(2)));
+    recalcQuota(updated);
   };
 
   /*
@@ -160,7 +184,36 @@ export default function Services() {
   */
 
   const saveAssignment = async () => {
+    // Hard stop: never let an over-100% allocation reach the server.
+    if (isOverQuota) {
+      alert(
+        `Total quota is ${assignedQuota}%, which is over 100%. Please reduce one or more centers before saving.`,
+      );
+      return;
+    }
+
+    // POC email is required for every assigned center.
+    const missingPoc = assignments.find((item) => !item.poc_email?.trim());
+
+    if (missingPoc) {
+      alert(
+        `POC Email is required for ${missingPoc.center_name}. Please fill it in before saving.`,
+      );
+      return;
+    }
+
+    // Soft warning: allow partial allocation, but make sure it's intentional.
+    if (assignedQuota < 100) {
+      const proceed = window.confirm(
+        `Only ${assignedQuota}% of this service's quota is allocated (${remainingQuota}% remaining unassigned). Save anyway?`,
+      );
+
+      if (!proceed) return;
+    }
+
     try {
+      setSaving(true);
+
       const payload = {
         service_id: selectedService.id,
 
@@ -179,6 +232,8 @@ export default function Services() {
       }
     } catch (error) {
       alert(error.response?.data?.message || "Failed saving");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -190,64 +245,25 @@ export default function Services() {
     <div className="p-6">
       {/* Header */}
 
-      <div
-        className="
-flex
-justify-between
-mb-6
-"
-      >
+      <div className="flex justify-between mb-6">
         <div>
-          <h1
-            className="
-text-2xl
-font-semibold
-text-gray-800
-"
-          >
-            Services
-          </h1>
+          <h1 className="text-2xl font-semibold text-gray-800">Services</h1>
 
-          <p
-            className="
-text-sm
-text-gray-500
-"
-          >
-            Manage service center quota
-          </p>
+          <p className="text-sm text-gray-500">Manage service center quota</p>
         </div>
       </div>
 
       {/* Search */}
 
-      <div
-        className="
-mb-5
-max-w-md
-relative
-"
-      >
+      <div className="mb-5 max-w-md relative">
         <Search
           size={18}
-          className="
-absolute
-left-3
-top-1/2
--translate-y-1/2
-text-gray-400
-"
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
         />
 
         <input
-          className="
-input-field
-w-full
-pl-9
-"
-          placeholder="
-Search service...
-"
+          className="input-field w-full pl-9"
+          placeholder="Search service..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -255,17 +271,20 @@ Search service...
 
       {/* Table */}
 
-      <div
-        className="
-bg-white
-border
-rounded-lg
-overflow-hidden
-"
-      >
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         {loading ? (
           <div className="p-10 flex justify-center">
             <LoaderSpinner />
+          </div>
+        ) : filteredServices.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="bg-gray-50 rounded-full p-4 mb-3">
+              <Briefcase size={24} className="text-gray-300" />
+            </div>
+            <p className="text-gray-600 font-medium">No services found</p>
+            <p className="text-sm text-gray-400 mt-1">
+              Try a different search term
+            </p>
           </div>
         ) : (
           <table className="w-full">
@@ -281,46 +300,21 @@ overflow-hidden
 
             <tbody>
               {filteredServices.map((service, index) => (
-                <tr
-                  key={service.id}
-                  className="
-border-b
-hover:bg-gray-50
-"
-                >
+                <tr key={service.id} className="border-b hover:bg-gray-50">
                   <td className="px-6 py-4">{index + 1}</td>
 
                   <td className="px-6 py-4">
-                    <div
-                      className="
-flex
-items-center
-gap-2
-"
-                    >
+                    <div className="flex items-center gap-2">
                       <Briefcase size={18} className="text-blue-600" />
 
                       {service.name}
                     </div>
                   </td>
 
-                  <td
-                    className="
-px-6 py-4
-text-right
-"
-                  >
+                  <td className="px-6 py-4 text-right">
                     <button
                       onClick={() => openDrawer(service)}
-                      className="
-bg-teal-600
-hover:bg-teal-700
-text-white
-px-3
-py-2
-rounded-lg
-text-sm
-"
+                      className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-lg text-sm"
                     >
                       Modify
                     </button>
@@ -332,86 +326,83 @@ text-sm
         )}
       </div>
 
+      {!loading && filteredServices.length > 0 && (
+        <p className="text-xs text-gray-400 mt-3">
+          {filteredServices.length} service
+          {filteredServices.length === 1 ? "" : "s"}
+        </p>
+      )}
+
       {/* Drawer */}
 
       {showPanel && (
-        <div
-          className="
-fixed
-inset-0
-bg-black/30
-z-50
-"
-        >
-          <div
-            className="
-absolute
-right-0
-top-0
-h-full
-w-full
-max-w-md
-bg-white
-p-6
-overflow-y-auto
-"
-          >
-            <div
-              className="
-flex
-justify-between
-mb-6
-"
-            >
-              <h2
-                className="
-text-lg
-font-semibold
-"
-              >
-                {selectedService.name}
-              </h2>
+        <div className="fixed inset-0 bg-black/30 z-50">
+          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white p-6 overflow-y-auto">
+            <div className="flex justify-between mb-6">
+              <h2 className="text-lg font-semibold">{selectedService.name}</h2>
 
               <button onClick={() => setShowPanel(false)}>✕</button>
             </div>
 
-            <div
-              className="
-grid
-grid-cols-2
-gap-3
-mb-5
-"
-            >
+            <div className="grid grid-cols-2 gap-3 mb-2">
               <div
-                className="
-bg-blue-50
-p-3
-rounded-lg
-"
+                className={`p-3 rounded-lg ${
+                  isOverQuota ? "bg-red-50" : "bg-blue-50"
+                }`}
               >
                 Assigned
-                <b>{assignedQuota}%</b>
+                <b className={isOverQuota ? "text-red-600" : ""}>
+                  {" "}
+                  {assignedQuota}%
+                </b>
               </div>
 
               <div
-                className="
-bg-green-50
-p-3
-rounded-lg
-"
+                className={`p-3 rounded-lg ${
+                  isOverQuota
+                    ? "bg-red-50"
+                    : isFullyAllocated
+                      ? "bg-green-50"
+                      : "bg-yellow-50"
+                }`}
               >
                 Remaining
-                <b>{remainingQuota}%</b>
+                <b
+                  className={
+                    isOverQuota
+                      ? "text-red-600"
+                      : isFullyAllocated
+                        ? ""
+                        : "text-yellow-700"
+                  }
+                >
+                  {" "}
+                  {remainingQuota}%
+                </b>
               </div>
             </div>
+
+            {isOverQuota && (
+              <div className="flex items-start gap-2 text-sm text-red-600 mb-3">
+                <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                <span>
+                  Total exceeds 100%. Reduce one or more centers before saving.
+                </span>
+              </div>
+            )}
+
+            {!isOverQuota && !isFullyAllocated && assignments.length > 0 && (
+              <div className="flex items-start gap-2 text-sm text-yellow-700 mb-3">
+                <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                <span>
+                  {remainingQuota}% is still unassigned across other centers.
+                </span>
+              </div>
+            )}
+
             <div className="mb-2">
               <select
-                className="
-      input-field
-      w-full
-      mt-3
-    "
+                className="input-field w-full mt-3"
                 value=""
                 onChange={(e) => {
                   addCenter(e.target.value);
@@ -433,39 +424,18 @@ rounded-lg
                   ))}
               </select>
             </div>
+
             {assignments.map((item, index) => (
               <div
                 key={index}
-                className="
-      border
-      rounded-lg
-      p-4
-      mb-3
-      bg-gray-50
-    "
+                className="border rounded-lg p-4 mb-3 bg-gray-50"
               >
                 <div className="flex justify-between items-center mb-3">
                   <div className="font-medium">{item.center_name}</div>
 
                   <button
-                    className="
-          text-red-500
-          text-sm
-        "
-                    onClick={() => {
-                      const updated = assignments.filter((_, i) => i !== index);
-
-                      setAssignments(updated);
-
-                      const total = updated.reduce(
-                        (sum, item) => sum + Number(item.percentage_quota || 0),
-                        0,
-                      );
-
-                      setAssignedQuota(Number(total.toFixed(2)));
-
-                      setRemainingQuota(Number((100 - total).toFixed(2)));
-                    }}
+                    className="text-red-500 text-sm"
+                    onClick={() => removeCenter(index)}
                   >
                     Remove
                   </button>
@@ -478,11 +448,7 @@ rounded-lg
                 <input
                   type="text"
                   inputMode="decimal"
-                  className="
-        input-field
-        w-full
-        mb-3
-      "
+                  className="input-field w-full mb-3"
                   value={item.percentage_quota}
                   onChange={(e) => {
                     const value = e.target.value;
@@ -499,15 +465,18 @@ rounded-lg
 
                 {/* POC Email */}
 
-                <label className="label">POC Email</label>
+                <label className="label">
+                  POC Email <span className="text-red-500">*</span>
+                </label>
 
                 <input
                   type="email"
-                  className="
-        input-field
-        w-full
-        mb-3
-      "
+                  required
+                  className={`input-field w-full mb-3 ${
+                    !item.poc_email?.trim()
+                      ? "border-red-300 focus:border-red-400"
+                      : ""
+                  }`}
                   placeholder="poc@example.com"
                   value={item.poc_email}
                   onChange={(e) => {
@@ -519,16 +488,19 @@ rounded-lg
                   }}
                 />
 
+                {!item.poc_email?.trim() && (
+                  <p className="text-xs text-red-500 -mt-2 mb-3">
+                    POC email is required
+                  </p>
+                )}
+
                 {/* CC Email */}
 
                 <label className="label">CC Emails</label>
 
                 <input
                   type="text"
-                  className="
-        input-field
-        w-full
-      "
+                  className="input-field w-full"
                   placeholder="a@test.com,b@test.com"
                   value={item.cc_email}
                   onChange={(e) => {
@@ -544,16 +516,14 @@ rounded-lg
 
             <button
               onClick={saveAssignment}
-              className="
-w-full
-bg-indigo-600
-text-white
-py-2
-rounded-lg
-mt-6
-"
+              disabled={isOverQuota || saving}
+              className={`w-full text-white py-2 rounded-lg mt-6 ${
+                isOverQuota || saving
+                  ? "bg-indigo-300 cursor-not-allowed"
+                  : "bg-indigo-600 hover:bg-indigo-700"
+              }`}
             >
-              Save Allocation
+              {saving ? "Saving..." : "Save Allocation"}
             </button>
           </div>
         </div>
