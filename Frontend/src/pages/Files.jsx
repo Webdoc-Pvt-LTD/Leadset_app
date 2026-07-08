@@ -49,13 +49,20 @@ const statusConfig = {
 export default function Files() {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchText, setSearchText] = useState("");
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [selected, setSelected] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [showEmailDrawer, setShowEmailDrawer] = useState(false);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(10);
 
+  const [pagination, setPagination] = useState({
+    total: 0,
+    totalPages: 1,
+  });
   const [emailData, setEmailData] = useState({
     to: "",
     cc: "",
@@ -85,50 +92,52 @@ export default function Files() {
 
     setShowDrawer(true);
   };
-  const filtered = files?.filter((f) => {
-    const matchSearch =
-      f.name.toLowerCase().includes(search.toLowerCase()) ||
-      f.job.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = filterStatus === "all" || f.status === filterStatus;
-    return matchSearch && matchStatus;
-  });
+  // const filtered = files?.filter((f) => {
+  //   const matchSearch =
+  //     f.name.toLowerCase().includes(search.toLowerCase()) ||
+  //     f.job.toLowerCase().includes(search.toLowerCase());
+  //   const matchStatus = filterStatus === "all" || f.status === filterStatus;
+  //   return matchSearch && matchStatus;
+  // });
 
-  useEffect(() => {
-    fetchFiles();
-  }, []);
-
-  const fetchFiles = async () => {
+  const getFiles = async () => {
     try {
       setLoading(true);
 
-      const { data } = await axios.get(`${BASE_URL}/files/all`);
+      const res = await axios.get(`${BASE_URL}/files/all`, {
+        params: {
+          page,
+          limit,
+          search,
+          status: filterStatus,
+        },
+      });
 
-      const mappedFiles = data?.data.map((file) => ({
-        id: file.id,
-        name: file.file_name,
-        job: file.job_name,
-        service: file.service,
-        total: file.total_record,
-        processed: file.processed_record,
-        status: file.status.toLowerCase(),
-        uploaded: new Date(file.upload_date).toLocaleString(),
-        responseTable: file.response_table_name,
-        scheduleTime: file.schedule_time,
-        jobStart: file.job_start_date,
-        jobEnd: file.job_end_date,
-        balanceLimit: file.balance_limit,
-        removeSub: file.remove_sub,
-        removeUnsub: file.remove_unsub,
-        days: file.days,
-      }));
-
-      setFiles(mappedFiles);
+      if (res.data.success) {
+        setFiles(res.data.data.files);
+        setPagination(res.data.data.pagination);
+      }
     } catch (err) {
-      console.error(err);
+      console.log(err);
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, filterStatus]);
+
+  useEffect(() => {
+    getFiles();
+  }, [page, search, filterStatus]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchText);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchText]);
   const handleDownload = async (sendEmailFlag) => {
     try {
       setLoading(true);
@@ -199,7 +208,7 @@ export default function Files() {
     }
   };
   if (loading) return <LoaderSpinner />;
-  console.log("files", selectedFile);
+  console.log("files", files);
   return (
     <>
       <div className="space-y-6">
@@ -231,8 +240,8 @@ export default function Files() {
             <input
               className="input-field pl-9"
               placeholder="Search by file or job name…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
             />
           </div>
           <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
@@ -258,16 +267,6 @@ export default function Files() {
           <table className="w-full text-sm min-w-[640px]">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/70">
-                {/* <th className="w-10 px-4 py-3">
-                  <input
-                    type="checkbox"
-                    checked={
-                      selected.length === filtered.length && filtered.length > 0
-                    }
-                    onChange={toggleAll}
-                    className="accent-indigo-600 cursor-pointer"
-                  />
-                </th> */}
                 {[
                   "File",
                   "Job",
@@ -288,7 +287,7 @@ export default function Files() {
               </tr>
             </thead>
             <tbody>
-              {filtered?.length === 0 ? (
+              {files?.length === 0 ? (
                 <tr>
                   <td
                     colSpan={9}
@@ -298,9 +297,9 @@ export default function Files() {
                   </td>
                 </tr>
               ) : (
-                filtered?.map((file) => {
-                  const cfg = statusConfig[file.status];
-                  console.log("cfg", cfg, file.status);
+                files?.map((file) => {
+                  console.log("cfg", file.status);
+                  const cfg = statusConfig[file?.status.toLowerCase()] || {};
                   const Icon = cfg?.icon;
                   return (
                     <tr
@@ -308,14 +307,6 @@ export default function Files() {
                       className={`border-b border-slate-100 last:border-0 transition-colors
                     ${selected.includes(file.id) ? "bg-indigo-50/60" : "hover:bg-slate-50/70"}`}
                     >
-                      {/* <td className="px-4 py-3.5">
-                        <input
-                          type="checkbox"
-                          checked={selected.includes(file.id)}
-                          onChange={() => toggleSelect(file.id)}
-                          className="accent-indigo-600 cursor-pointer"
-                        />
-                      </td> */}
                       <td className="px-3 py-3.5">
                         <div className="flex items-center gap-2">
                           <FileText
@@ -323,20 +314,20 @@ export default function Files() {
                             className="text-indigo-500 flex-shrink-0"
                           />
                           <span className="text-slate-700 font-medium font-mono text-xs truncate max-w-[140px]">
-                            {file.name}
+                            {file.file_name}
                           </span>
                         </div>
                       </td>
                       <td className="px-3 py-3.5 overflow-hidden max-w-[130px] truncate whitespace-nowrap text-ellipsis ">
-                        {file.job}
+                        {file.job_name}
                       </td>
                       <td className="px-3 py-3.5 ">{file.service}</td>
-                      <td className="px-3 py-3.5 ">{file.balanceLimit}</td>
+                      <td className="px-3 py-3.5 ">{file.balance_limit}</td>
                       <td className="px-3 py-3.5 tracking-wider whitespace-nowrap text-slate-700 text-xs font-medium">
-                        {formatNumber(file?.total)}
+                        {formatNumber(file?.total_record)}
                       </td>
                       <td className="px-3 py-3.5 tracking-wider whitespace-nowrap text-slate-700 text-xs font-medium">
-                        {formatNumber(file?.processed)}
+                        {formatNumber(file?.processed_record)}
                       </td>
                       <td className="px-3 py-3.5">
                         <span
@@ -362,16 +353,6 @@ export default function Files() {
                             <Eye size={15} />
                             View
                           </button>
-
-                          {/* <button
-                            onClick={() => handleEmail(file)}
-                            className={`   ${file.status !== "completed" ? "hidden" : "block"}
-                            inline-flex items-center gap-1 rounded-md bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 transition hover:bg-blue-100
-                        `}
-                          >
-                            <Mail size={15} />
-                            Email
-                          </button> */}
                         </div>
                       </td>
                     </tr>
@@ -382,9 +363,45 @@ export default function Files() {
           </table>
         </div>
 
-        <p className="text-xs text-slate-400 text-center">
-          Showing {filtered.length} of {files.length} files
-        </p>
+        <div className="flex items-center justify-between mt-5">
+          <p className="text-sm text-gray-500">
+            Showing {(pagination.page - 1) * pagination.limit + 1} -
+            {Math.min(pagination.page * pagination.limit, pagination.total)} of{" "}
+            {pagination.total}
+          </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              disabled={pagination.page === 1}
+              onClick={() => setPage((p) => p - 1)}
+              className="px-3 py-2 border rounded disabled:opacity-50"
+            >
+              Previous
+            </button>
+
+            {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map(
+              (p) => (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  className={`px-3 py-2 rounded border ${
+                    p === pagination.page ? "bg-indigo-600 text-white" : ""
+                  }`}
+                >
+                  {p}
+                </button>
+              ),
+            )}
+
+            <button
+              disabled={pagination.page === pagination.totalPages}
+              onClick={() => setPage((p) => p + 1)}
+              className="px-3 py-2 border rounded disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
       <>
         {/* Backdrop */}

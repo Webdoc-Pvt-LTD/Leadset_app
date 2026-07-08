@@ -1,5 +1,6 @@
 import { createContext, useContext, useState } from "react";
-
+import axios from "axios";
+import { BASE_URL } from "../config";
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -8,20 +9,34 @@ export function AuthProvider({ children }) {
     return storedUser ? JSON.parse(storedUser) : null;
   });
 
-  const login = (email, password) => {
-    if (email && password) {
-      const user = {
+  const login = async (email, password) => {
+    try {
+      const { data } = await axios.post(`${BASE_URL}/users/login`, {
         email,
-        name: email.split("@")[0],
+        password,
+      });
+
+      if (data.success) {
+        setUser(data.data);
+
+        sessionStorage.setItem("user", JSON.stringify(data.data));
+
+        return {
+          success: true,
+        };
+      }
+
+      return {
+        success: false,
+        message: data.message,
       };
-
-      setUser(user);
-      sessionStorage.setItem("user", JSON.stringify(user));
-
-      return true;
+    } catch (err) {
+      return {
+        success: false,
+        message:
+          err.response?.data?.message || "Unable to login. Please try again.",
+      };
     }
-
-    return false;
   };
 
   const logout = () => {
@@ -30,7 +45,13 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        login,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -14,13 +14,19 @@ export default function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
     setError("");
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 600));
-    const ok = login(email, password);
+
+    const result = await login(email, password);
+
     setLoading(false);
-    if (ok) navigate("/dashboard");
-    else setError("Invalid email or password.");
+
+    if (result.success) {
+      navigate("/dashboard");
+    } else {
+      setError(result.message);
+    }
   };
   if (user) {
     return <Navigate to="/dashboard" replace />;

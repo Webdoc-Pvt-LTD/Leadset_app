@@ -7,6 +7,8 @@ import {
   Menu,
   X,
   LayoutDashboard,
+  Building2,
+  Bolt,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
@@ -15,6 +17,8 @@ const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/upload", icon: UploadCloud, label: "Upload Job" },
   { to: "/files", icon: FileText, label: "View Files" },
+  { to: "/centers", icon: Building2, label: "Manage Centers" },
+  { to: "/services", icon: Bolt, label: "Manage Services" },
 ];
 
 export default function Sidebar() {
@@ -89,9 +93,11 @@ export default function Sidebar() {
           {!collapsed && (
             <div className="px-3 py-2 mb-1">
               <p className="text-xs font-semibold text-slate-300 truncate capitalize">
-                {user?.name}
+                {user?.user.name}
               </p>
-              <p className="text-xs text-slate-500 truncate">{user?.email}</p>
+              <p className="text-xs text-slate-500 truncate">
+                {user?.user.email}
+              </p>
             </div>
           )}
           <button

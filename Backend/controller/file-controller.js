@@ -151,9 +151,107 @@ const uploadFile = async (req, res) => {
     });
   }
 };
+// const getFiles = async (req, res) => {
+//   try {
+//     const page = parseInt(req.query.page) || 1;
+//     const limit = parseInt(req.query.limit) || 10;
+//     const offset = (page - 1) * limit;
+
+//     // Total Records
+//     const [[{ total }]] = await db.query(
+//       `SELECT COUNT(*) AS total FROM file_entity`,
+//     );
+
+//     // Paginated Records
+//     const [rows] = await db.query(
+//       `
+//       SELECT
+//         id,
+//         file_path,
+//         file_name,
+//         job_name,
+//         processed_record,
+//         response_table_name,
+//         status,
+//         total_record,
+//         upload_date,
+//         schedule_time,
+//         job_start_date,
+//         job_end_date,
+//         balance_limit,
+//         service,
+//         remove_sub,
+//         remove_unsub,
+//         days
+//       FROM file_entity
+//       ORDER BY upload_date DESC
+//       LIMIT ? OFFSET ?
+//       `,
+//       [limit, offset],
+//     );
+
+//     return sendResponse({
+//       res,
+//       success: true,
+//       message: "Files fetched successfully",
+//       statusCode: 200,
+//       data: {
+//         files: rows,
+//         pagination: {
+//           total,
+//           page,
+//           limit,
+//           totalPages: Math.ceil(total / limit),
+//         },
+//       },
+//     });
+//   } catch (error) {
+//     console.error(error);
+
+//     return sendResponse({
+//       res,
+//       success: false,
+//       message: "Failed to fetch files",
+//       statusCode: 500,
+//       error: error.message,
+//     });
+//   }
+// };
 const getFiles = async (req, res) => {
   try {
-    const query = `
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    const search = (req.query.search || "").trim();
+    const status = (req.query.status || "all").trim().toUpperCase();
+
+    let whereClause = "WHERE 1=1";
+    const params = [];
+
+    // Search filter
+    if (search) {
+      whereClause += ` AND (file_name LIKE ? OR job_name LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`);
+    }
+
+    // Status filter
+    if (status !== "ALL") {
+      whereClause += ` AND status = ?`;
+      params.push(status);
+    }
+
+    // Total count
+    const [[{ total }]] = await db.query(
+      `SELECT COUNT(*) AS total
+       FROM file_entity
+       ${whereClause}`,
+      params,
+    );
+
+    // Data
+    const [rows] = await db.query(
+      `
       SELECT
         id,
         file_path,
@@ -173,20 +271,30 @@ const getFiles = async (req, res) => {
         remove_unsub,
         days
       FROM file_entity
+      ${whereClause}
       ORDER BY upload_date DESC
-    `;
-
-    const [rows] = await db.query(query);
+      LIMIT ? OFFSET ?
+      `,
+      [...params, limit, offset],
+    );
 
     return sendResponse({
       res,
       success: true,
       message: "Files fetched successfully",
       statusCode: 200,
-      data: rows,
+      data: {
+        files: rows,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        },
+      },
     });
   } catch (error) {
-    console.error("Error fetching files:", error);
+    console.error(error);
 
     return sendResponse({
       res,
@@ -197,7 +305,6 @@ const getFiles = async (req, res) => {
     });
   }
 };
-
 const exportTableToExcel = async (req, res) => {
   try {
     const {
