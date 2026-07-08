@@ -6,6 +6,7 @@ const fileRoutes = require("./routes/file-routes");
 const dashboardRoutes = require("./routes/dashboard-routes");
 const centerRoutes = require("./routes/center-routes");
 const serviceRoutes = require("./routes/services-routes");
+const userRoutes = require("./routes/user-routes");
 const app = express();
 const cors = require("cors");
 
@@ -25,6 +26,7 @@ app.use("/api/files", fileRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/centers", centerRoutes);
 app.use("/api/services", serviceRoutes);
+app.use("/api/users", userRoutes);
 app.use((req, res) => {
   return sendResponse({
     res,
