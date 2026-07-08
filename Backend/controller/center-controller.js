@@ -97,97 +97,102 @@ const createCenter = async (req, res) => {
     });
   }
 };
+const updateCenter = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, is_active } = req.body;
 
-// const assignServiceToCenter = async (req, res) => {
-//   try {
-//     const { center_id, service_id, percentage_quota, poc_email, cc_email } =
-//       req.body;
+    // Validation
+    if (!name) {
+      return sendResponse({
+        res,
+        success: false,
+        message: "Center name is required",
+        statusCode: 400,
+      });
+    }
 
-//     if (!center_id || !service_id || !percentage_quota || !poc_email) {
-//       return sendResponse({
-//         res,
-//         success: false,
-//         message: "Required fields missing",
-//         statusCode: 400,
-//       });
-//     }
+    if (typeof is_active === "undefined") {
+      return sendResponse({
+        res,
+        success: false,
+        message: "Center status is required",
+        statusCode: 400,
+      });
+    }
 
-//     // Check existing assignment
-//     const [existing] = await db.query(
-//       `
-//       SELECT id
-//       FROM center_service_assignment
-//       WHERE center_id = ?
-//       AND service_id = ?
-//       `,
-//       [center_id, service_id],
-//     );
+    // Check if center exists
+    const [center] = await db.query(`SELECT id FROM centers WHERE id = ?`, [
+      id,
+    ]);
 
-//     if (existing.length > 0) {
-//       await db.query(
-//         `
-//         UPDATE center_service_assignment
-//         SET
-//           percentage_quota=?,
-//           poc_email=?,
-//           cc_email=?
-//         WHERE id=?
-//         `,
-//         [percentage_quota, poc_email, cc_email || null, existing[0].id],
-//       );
+    if (center.length === 0) {
+      return sendResponse({
+        res,
+        success: false,
+        message: "Center not found",
+        statusCode: 404,
+      });
+    }
 
-//       return sendResponse({
-//         res,
-//         success: true,
-//         message: "Assignment updated successfully",
-//         statusCode: 200,
-//       });
-//     }
+    // Check duplicate name (excluding current center)
+    const [existingCenter] = await db.query(
+      `SELECT id FROM centers WHERE name = ? AND id != ?`,
+      [name, id],
+    );
 
-//     const [result] = await db.query(
-//       `
-//       INSERT INTO center_service_assignment
-//       (
-//         center_id,
-//         service_id,
-//         percentage_quota,
-//         poc_email,
-//         cc_email
-//       )
-//       VALUES (?,?,?,?,?)
-//       `,
-//       [center_id, service_id, percentage_quota, poc_email, cc_email || null],
-//     );
+    if (existingCenter.length > 0) {
+      return sendResponse({
+        res,
+        success: false,
+        message: "Center already exists",
+        statusCode: 409,
+      });
+    }
 
-//     return sendResponse({
-//       res,
-//       success: true,
-//       message: "Service assigned successfully",
-//       statusCode: 201,
-//       data: {
-//         id: result.insertId,
-//       },
-//     });
-//   } catch (error) {
-//     console.error(error);
+    // Update center
+    await db.query(
+      `
+        UPDATE centers
+        SET
+          name = ?,
+          is_active = ?
+        WHERE id = ?
+      `,
+      [name, is_active ? 1 : 0, id],
+    );
 
-//     return sendResponse({
-//       res,
-//       success: false,
-//       message: "Failed to assign service",
-//       statusCode: 500,
-//       error: error.message,
-//     });
-//   }
-// };
+    return sendResponse({
+      res,
+      success: true,
+      message: "Center updated successfully",
+      statusCode: 200,
+      data: {
+        id: Number(id),
+        name,
+        is_active: is_active ? 1 : 0,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating center:", error);
+
+    return sendResponse({
+      res,
+      success: false,
+      message: "Failed to update center",
+      statusCode: 500,
+      error: error.message,
+    });
+  }
+};
 
 const assignServiceToCenter = async (req, res) => {
   const connection = await db.getConnection();
 
   try {
-    const { center_id, assignments } = req.body;
+    const { service_id, assignments } = req.body;
 
-    if (!center_id || !assignments?.length) {
+    if (!service_id || !assignments?.length) {
       return sendResponse({
         res,
         success: false,
@@ -198,10 +203,72 @@ const assignServiceToCenter = async (req, res) => {
 
     await connection.beginTransaction();
 
-    for (const item of assignments) {
-      const { service_id, percentage_quota, poc_email, cc_email } = item;
+    /*
+      Check total service quota from payload
+    */
 
-      if (!service_id || percentage_quota === undefined) {
+    const requestTotal = assignments.reduce(
+      (sum, item) => sum + Number(item.percentage_quota || 0),
+      0,
+    );
+
+    if (requestTotal > 100) {
+      await connection.rollback();
+
+      return sendResponse({
+        res,
+        success: false,
+        message: "Total quota cannot exceed 100%",
+        statusCode: 400,
+      });
+    }
+
+    /*
+      Check existing quota of this service
+      excluding centers coming in payload
+    */
+
+    const centerIds = assignments.map((item) => item.center_id);
+
+    const placeholders = centerIds.map(() => "?").join(",");
+
+    const [existingQuota] = await connection.query(
+      `
+      SELECT 
+        COALESCE(SUM(percentage_quota),0) AS total_quota
+
+      FROM center_service_assignment
+
+      WHERE service_id = ?
+
+      AND center_id NOT IN (${placeholders})
+      `,
+      [service_id, ...centerIds],
+    );
+
+    const alreadyAssigned = Number(existingQuota[0].total_quota || 0);
+
+    const finalQuota = alreadyAssigned + requestTotal;
+
+    if (finalQuota > 100) {
+      await connection.rollback();
+
+      return sendResponse({
+        res,
+        success: false,
+        message: `Service quota exceeded. Already assigned ${alreadyAssigned}%. Remaining ${100 - alreadyAssigned}%`,
+        statusCode: 400,
+      });
+    }
+
+    /*
+      Insert / Update assignments
+    */
+
+    for (const item of assignments) {
+      const { center_id, percentage_quota, poc_email, cc_email } = item;
+
+      if (!center_id || percentage_quota === undefined) {
         await connection.rollback();
 
         return sendResponse({
@@ -212,68 +279,28 @@ const assignServiceToCenter = async (req, res) => {
         });
       }
 
-      /*
-        Check service quota
-
-        Example:
-
-        HIS
-        Center A = 40
-        Center B = 30
-
-        New assignment Center C = 40
-
-        Total = 110 ❌
-      */
-
-      const [serviceQuota] = await connection.query(
-        `
-        SELECT 
-          COALESCE(SUM(percentage_quota),0) AS total_quota
-        FROM center_service_assignment
-        WHERE service_id = ?
-        AND center_id != ?
-        `,
-        [service_id, center_id],
-      );
-
-      const alreadyAssigned = Number(serviceQuota[0].total_quota || 0);
-
-      const newTotal = alreadyAssigned + Number(percentage_quota);
-
-      if (newTotal > 100) {
-        await connection.rollback();
-
-        return sendResponse({
-          res,
-          success: false,
-          message: `Quota exceeded for service. Already assigned ${alreadyAssigned}%. Remaining quota ${100 - alreadyAssigned}%`,
-          statusCode: 400,
-        });
-      }
-
-      /*
-        Check existing center-service assignment
-      */
-
       const [existing] = await connection.query(
         `
         SELECT id
+
         FROM center_service_assignment
-        WHERE center_id=?
-        AND service_id=?
+
+        WHERE service_id=?
+        AND center_id=?
         `,
-        [center_id, service_id],
+        [service_id, center_id],
       );
 
       if (existing.length) {
         await connection.query(
           `
           UPDATE center_service_assignment
+
           SET
             percentage_quota=?,
             poc_email=?,
             cc_email=?
+
           WHERE id=?
           `,
           [percentage_quota, poc_email, cc_email || null, existing[0].id],
@@ -283,17 +310,18 @@ const assignServiceToCenter = async (req, res) => {
           `
           INSERT INTO center_service_assignment
           (
-            center_id,
             service_id,
+            center_id,
             percentage_quota,
             poc_email,
             cc_email
           )
+
           VALUES(?,?,?,?,?)
           `,
           [
-            center_id,
             service_id,
+            center_id,
             percentage_quota,
             poc_email,
             cc_email || null,
@@ -307,18 +335,18 @@ const assignServiceToCenter = async (req, res) => {
     return sendResponse({
       res,
       success: true,
-      message: "Assignments saved successfully",
+      message: "Service center allocation saved successfully",
       statusCode: 200,
     });
   } catch (error) {
     await connection.rollback();
 
-    console.error(error);
+    console.error("assign service center error:", error);
 
     return sendResponse({
       res,
       success: false,
-      message: "Failed to save assignments",
+      message: "Failed to save allocation",
       statusCode: 500,
       error: error.message,
     });
@@ -382,4 +410,5 @@ module.exports = {
   createCenter,
   assignServiceToCenter,
   getCenterAssignments,
+  updateCenter,
 };

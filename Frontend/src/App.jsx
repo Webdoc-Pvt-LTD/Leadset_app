@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import Upload from "./pages/Upload";
 import Files from "./pages/Files";
 import Centers from "./pages/Centers";
+import Services from "./pages/Services";
 export default function App() {
   return (
     <AuthProvider>
@@ -26,6 +27,7 @@ export default function App() {
             <Route path="upload" element={<Upload />} />
             <Route path="files" element={<Files />} />
             <Route path="centers" element={<Centers />} />
+            <Route path="services" element={<Services />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

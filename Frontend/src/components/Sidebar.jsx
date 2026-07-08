@@ -8,6 +8,7 @@ import {
   X,
   LayoutDashboard,
   Building2,
+  Bolt,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
@@ -17,6 +18,7 @@ const navItems = [
   { to: "/upload", icon: UploadCloud, label: "Upload Job" },
   { to: "/files", icon: FileText, label: "View Files" },
   { to: "/centers", icon: Building2, label: "Manage Centers" },
+  { to: "/services", icon: Bolt, label: "Manage Services" },
 ];
 
 export default function Sidebar() {

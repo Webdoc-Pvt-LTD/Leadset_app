@@ -6,5 +6,5 @@ const {
 const router = express.Router();
 
 router.get("/all", getServices);
-router.get("/quota/:service_id", getServiceQuota);
+router.get("/:service_id/quota", getServiceQuota);
 module.exports = router;
