@@ -196,24 +196,65 @@ const assignServiceToCenter = async (req, res) => {
       });
     }
 
-    const totalQuota = assignments.reduce(
-      (sum, item) => sum + Number(item.percentage_quota || 0),
-      0,
-    );
-
-    if (totalQuota > 100) {
-      return sendResponse({
-        res,
-        success: false,
-        message: "Total quota cannot exceed 100%",
-        statusCode: 400,
-      });
-    }
-
     await connection.beginTransaction();
 
     for (const item of assignments) {
       const { service_id, percentage_quota, poc_email, cc_email } = item;
+
+      if (!service_id || percentage_quota === undefined) {
+        await connection.rollback();
+
+        return sendResponse({
+          res,
+          success: false,
+          message: "Invalid assignment data",
+          statusCode: 400,
+        });
+      }
+
+      /*
+        Check service quota
+
+        Example:
+
+        HIS
+        Center A = 40
+        Center B = 30
+
+        New assignment Center C = 40
+
+        Total = 110 ❌
+      */
+
+      const [serviceQuota] = await connection.query(
+        `
+        SELECT 
+          COALESCE(SUM(percentage_quota),0) AS total_quota
+        FROM center_service_assignment
+        WHERE service_id = ?
+        AND center_id != ?
+        `,
+        [service_id, center_id],
+      );
+
+      const alreadyAssigned = Number(serviceQuota[0].total_quota || 0);
+
+      const newTotal = alreadyAssigned + Number(percentage_quota);
+
+      if (newTotal > 100) {
+        await connection.rollback();
+
+        return sendResponse({
+          res,
+          success: false,
+          message: `Quota exceeded for service. Already assigned ${alreadyAssigned}%. Remaining quota ${100 - alreadyAssigned}%`,
+          statusCode: 400,
+        });
+      }
+
+      /*
+        Check existing center-service assignment
+      */
 
       const [existing] = await connection.query(
         `
