@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import axios from "axios";
 import { BASE_URL } from "../config";
-const SERVICES = ["MIS", "HIS", "HBS"];
 
 const initialForm = {
   jobName: "",
@@ -35,6 +34,7 @@ export default function Upload() {
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState({});
   const [services, setServices] = useState([]);
+  const [quota, setQuota] = useState(null);
   const fileRef = useRef();
 
   const set = (key, value) => {
@@ -101,7 +101,19 @@ export default function Upload() {
     setErrors({});
     setSubmitted(false);
   };
+  const getServiceQuota = async (serviceId) => {
+    try {
+      const response = await axios.get(
+        `${BASE_URL}/services/${serviceId}/quota`,
+      );
 
+      if (response.data.success) {
+        setQuota(response.data.data.centers);
+      }
+    } catch (error) {
+      console.error("Failed to fetch quota", error);
+    }
+  };
   const Checkbox = ({ checked, onChange, label, description }) => (
     <label className="flex items-start gap-3 cursor-pointer group">
       <div className="relative mt-0.5 flex-shrink-0">
@@ -156,6 +168,8 @@ export default function Upload() {
 
     fetchServices();
   }, []);
+  console.log(quota);
+
   if (submitted) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
@@ -282,15 +296,22 @@ export default function Upload() {
             <select
               className="input-field"
               value={form.service.id}
-              onChange={(e) => {
+              onChange={async (e) => {
+                const serviceId = Number(e.target.value);
+
                 const selectedService = services.find(
-                  (service) => service.id === Number(e.target.value),
+                  (service) => service.id === serviceId,
                 );
+
+                if (!selectedService) return;
 
                 set("service", {
                   id: selectedService.id,
                   name: selectedService.name,
                 });
+
+                // Call API after selecting service
+                await getServiceQuota(selectedService.id);
               }}
             >
               <option value="">Select a service…</option>
@@ -306,8 +327,22 @@ export default function Upload() {
               <p className="text-xs text-red-500 mt-1.5">{errors.service}</p>
             )}
           </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            {quota?.map((item) => (
+              <div
+                key={item.id}
+                className="rounded-lg border border-gray-200 bg-sky-100 p-4 shadow-inner"
+              >
+                <h3 className="text-sm text-center font-semibold text-gray-800">
+                  {item.center_name}
+                </h3>
+                <p className="mt-2 text-lg text-center font-bold text-indigo-600">
+                  {item.percentage_quota}%
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
-
         {/* List Filtering */}
         <div className="card space-y-4">
           <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
