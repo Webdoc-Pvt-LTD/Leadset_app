@@ -251,29 +251,31 @@ const getFiles = async (req, res) => {
 
     // Data
     const [rows] = await db.query(
-      `
-      SELECT
-        id,
-        file_path,
-        file_name,
-        job_name,
-        processed_record,
-        response_table_name,
-        status,
-        total_record,
-        upload_date,
-        schedule_time,
-        job_start_date,
-        job_end_date,
-        balance_limit,
-        service,
-        remove_sub,
-        remove_unsub,
-        days
-      FROM file_entity
-      ${whereClause}
-      ORDER BY upload_date DESC
-      LIMIT ? OFFSET ?
+      `SELECT
+    f.id,
+    f.file_path,
+    f.file_name,
+    f.job_name,
+    f.processed_record,
+    f.response_table_name,
+    f.status,
+    f.total_record,
+    f.upload_date,
+    f.schedule_time,
+    f.job_start_date,
+    f.job_end_date,
+    f.balance_limit,
+    f.service,
+    s.id AS service_id,
+    f.remove_sub,
+    f.remove_unsub,
+    f.days
+FROM file_entity f
+LEFT JOIN services s
+ON f.service COLLATE utf8mb4_0900_ai_ci = s.name
+${whereClause}
+ORDER BY f.upload_date DESC
+LIMIT ? OFFSET ?
       `,
       [...params, limit, offset],
     );

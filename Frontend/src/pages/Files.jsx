@@ -84,11 +84,7 @@ export default function Files() {
   };
   const handleView = (file) => {
     console.log(file);
-    setSelectedFile({
-      ...file,
-      removeUnsub: file.removeUnsub == 1,
-      removeSub: file.removeSub == 1,
-    });
+    setSelectedFile(file);
 
     setShowDrawer(true);
   };
@@ -146,10 +142,10 @@ export default function Files() {
         {
           id: selectedFile.id,
           unsub_days: selectedFile.days || 0,
-          unsub_remove: selectedFile.removeUnsub,
-          sub_remove: selectedFile.removeSub,
+          unsub_remove: selectedFile.remove_unsub,
+          sub_remove: selectedFile.remove_sub,
           send_email: sendEmailFlag,
-          balance_limit: selectedFile.balanceLimit,
+          balance_limit: selectedFile.balance_limit,
         },
         {
           responseType: "blob",
@@ -157,7 +153,7 @@ export default function Files() {
       );
 
       const contentDisposition = response.headers["content-disposition"];
-      const baseName = selectedFile.name.replace(/\.[^/.]+$/, "");
+      const baseName = selectedFile.file_name.replace(/\.[^/.]+$/, "");
       let fileName = `export_${baseName}.xlsx`;
       if (contentDisposition) {
         const match = contentDisposition.match(/filename="?([^"]+)"?/);
@@ -208,7 +204,7 @@ export default function Files() {
     }
   };
   if (loading) return <LoaderSpinner />;
-  console.log("files", files);
+
   return (
     <>
       <div className="space-y-6">
@@ -298,7 +294,6 @@ export default function Files() {
                 </tr>
               ) : (
                 files?.map((file) => {
-                  console.log("cfg", file.status);
                   const cfg = statusConfig[file?.status.toLowerCase()] || {};
                   const Icon = cfg?.icon;
                   return (
@@ -427,7 +422,7 @@ export default function Files() {
           <div className="sticky top-0 flex items-center justify-between px-6 py-4 border-b bg-white">
             <div>
               <h2 className="text-lg font-semibold capitalize">
-                {selectedFile?.job}
+                {selectedFile?.job_name}
               </h2>
               <p className="text-sm text-slate-500">
                 View processing information
@@ -453,7 +448,9 @@ export default function Files() {
 
                   <div>
                     <p className="text-sm text-gray-700">File Name</p>
-                    <p className="font-medium break-all">{selectedFile.name}</p>
+                    <p className="font-medium break-all">
+                      {selectedFile.file_name}
+                    </p>
                   </div>
                 </div>
 
@@ -473,27 +470,27 @@ export default function Files() {
                 <div className="rounded-lg bg-slate-50 p-4">
                   <p className="text-sm text-gray-600">Total</p>
                   <p className="text-lg font-semibold">
-                    {formatNumber(selectedFile.total)}
+                    {formatNumber(selectedFile.total_record)}
                   </p>
                 </div>
 
                 <div className="rounded-lg bg-slate-50 p-4">
                   <p className="text-sm text-gray-600">Processed</p>
                   <p className="text-lg font-semibold">
-                    {formatNumber(selectedFile.processed)}
+                    {formatNumber(selectedFile.processed_record)}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-6 justify-center">
                 <div>
                   <p className="text-sm text-gray-600">Scheduled At</p>
-                  <p>{formatDateTime(selectedFile.scheduleTime)}</p>
+                  <p>{formatDateTime(selectedFile.schedule_time)}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-600">Completed At</p>
                   <p>
-                    {selectedFile.jobEnd
-                      ? formatDateTime(selectedFile.jobEnd)
+                    {selectedFile.job_end_date
+                      ? formatDateTime(selectedFile.job_end_date)
                       : "Not completed yet"}
                   </p>
                 </div>
@@ -507,15 +504,15 @@ export default function Files() {
                   <p className="text-xs text-gray-500">Balance Limit</p>
                   <input
                     type="number"
-                    value={selectedFile.balanceLimit}
+                    value={selectedFile.balance_limit}
                     onChange={(e) =>
                       setSelectedFile({
                         ...selectedFile,
-                        balanceLimit: e.target.value,
+                        balance_limit: e.target.value,
                       })
                     }
                     onBlur={() => {
-                      let value = Number(selectedFile.balanceLimit);
+                      let value = Number(selectedFile.balance_limit);
 
                       if (isNaN(value)) value = 10;
                       if (value < 10) value = 10;
@@ -523,7 +520,7 @@ export default function Files() {
 
                       setSelectedFile({
                         ...selectedFile,
-                        balanceLimit: value,
+                        balance_limit: value,
                       });
                     }}
                     className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none"
@@ -536,7 +533,7 @@ export default function Files() {
                 <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
-                    checked={selectedFile?.removeSub ?? false}
+                    checked={selectedFile?.remove_sub ?? false}
                     onChange={(e) =>
                       setSelectedFile((prev) => ({
                         ...prev,
@@ -553,11 +550,11 @@ export default function Files() {
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={selectedFile?.removeUnsub ?? false}
+                    checked={selectedFile?.remove_unsub ?? false}
                     onChange={(e) =>
                       setSelectedFile((prev) => ({
                         ...prev,
-                        removeUnsub: e.target.checked,
+                        remove_unsub: e.target.checked,
                         // Clear the days when unchecked (optional)
                         days: e.target.checked ? (prev.days ?? "") : "",
                       }))
@@ -568,7 +565,7 @@ export default function Files() {
                     Remove Unsubscribers
                   </span>
                 </label>
-                {selectedFile?.removeUnsub && (
+                {selectedFile?.remove_unsub && (
                   <div className="ml-7">
                     <label className="block text-sm text-gray-600 mb-1">
                       Remove unsubscribers older than (days)
@@ -601,7 +598,7 @@ export default function Files() {
                   onClick={() => handleDownload(false)}
                   className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
                   disabled={
-                    selectedFile?.status !== "completed"
+                    selectedFile?.status !== "COMPLETED"
                     // || !selectedFile?.days
                   }
                 >
@@ -614,7 +611,7 @@ export default function Files() {
                     "inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white hover:bg-indigo-700"
                   }
                   disabled={
-                    selectedFile?.status !== "completed"
+                    selectedFile?.status !== "COMPLETED"
                     // || !selectedFile?.days
                   }
                 >
