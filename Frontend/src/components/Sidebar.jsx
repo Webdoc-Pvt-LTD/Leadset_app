@@ -14,11 +14,36 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 
 const navItems = [
-  { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/upload", icon: UploadCloud, label: "Upload Job" },
-  { to: "/files", icon: FileText, label: "View Files" },
-  { to: "/centers", icon: Building2, label: "Manage Centers" },
-  { to: "/services", icon: Bolt, label: "Manage Services" },
+  {
+    to: "/dashboard",
+    icon: LayoutDashboard,
+    label: "Dashboard",
+    roles: ["admin", "agent"],
+  },
+  {
+    to: "/upload",
+    icon: UploadCloud,
+    label: "Upload Job",
+    roles: ["admin", "agent"],
+  },
+  {
+    to: "/files",
+    icon: FileText,
+    label: "View Files",
+    roles: ["admin", "agent"],
+  },
+  {
+    to: "/centers",
+    icon: Building2,
+    label: "Manage Centers",
+    roles: ["admin"],
+  },
+  {
+    to: "/services",
+    icon: Bolt,
+    label: "Manage Services",
+    roles: ["admin"],
+  },
 ];
 
 export default function Sidebar() {
@@ -38,6 +63,9 @@ export default function Sidebar() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+  const filteredNavItems = navItems.filter((item) =>
+    item.roles.includes(user?.user.role),
+  );
   return (
     <>
       <div
@@ -68,7 +96,7 @@ export default function Sidebar() {
 
         {/* Nav */}
         <nav className="flex-1 py-4 px-2 space-y-2">
-          {navItems.map(({ to, icon: Icon, label }) => (
+          {filteredNavItems?.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
