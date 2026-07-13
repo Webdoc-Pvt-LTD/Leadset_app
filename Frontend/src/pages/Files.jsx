@@ -146,12 +146,13 @@ export default function Files() {
           sub_remove: selectedFile.remove_sub,
           send_email: sendEmailFlag,
           balance_limit: selectedFile.balance_limit,
+          service_id: selectedFile.service_id,
         },
         {
           responseType: "blob",
         },
       );
-
+      return;
       const contentDisposition = response.headers["content-disposition"];
       const baseName = selectedFile.file_name.replace(/\.[^/.]+$/, "");
       let fileName = `export_${baseName}.xlsx`;
