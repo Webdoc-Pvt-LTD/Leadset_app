@@ -235,10 +235,82 @@ async function processFile(job) {
   await SendEmailResults(job, tableName);
   return { totalRecords: totalProcessed, tableName };
 }
+async function buildExcelBuffer(rows) {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("data");
+  sheet.columns = [
+    { header: "Sr No", key: "srNo", width: 10 },
+    { header: "Msisdn", key: "msisdn", width: 20 },
+    { header: "Balance", key: "balance", width: 15 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+
+  let serialNo = 1;
+  for (const row of rows) {
+    sheet.addRow({
+      srNo: serialNo++,
+      msisdn: row.msisdn,
+      balance: row.balance ? Number(row.balance) / 100 : null,
+    });
+  }
+
+  return workbook.xlsx.writeBuffer();
+}
+
 async function SendEmailResults(job, tableName) {
   try {
-    const servicePool = getPoolByService(job.service);
+   
+    let serviceName = job.service;
+    let resolvedServiceId ;
 
+   if (serviceName) {
+      const [serviceRows] = await db.query(
+        `SELECT id, name FROM services WHERE name = ? AND active = TRUE LIMIT 1`,
+        [serviceName],
+      );
+      if (serviceRows.length === 0) {
+        console.warn(
+          `⚠️ Service "${serviceName}" not found or inactive, skipping export email`,
+        );
+        return;
+      }
+      resolvedServiceId = serviceRows[0].id;
+      serviceName = serviceRows[0].name;
+    } else {
+      console.warn("⚠️ No service on job, skipping export email");
+      console.log("job ==>",job);
+      return;
+    }
+
+    const centerQuery = `
+      SELECT
+        csa.id,
+        csa.service_id,
+        s.name AS service_name,
+        csa.center_id,
+        c.name AS center_name,
+        csa.percentage_quota,
+        csa.poc_email,
+        csa.cc_email
+      FROM center_service_assignment csa
+      INNER JOIN services s
+        ON s.id = csa.service_id
+      INNER JOIN centers c
+        ON c.id = csa.center_id
+      WHERE csa.service_id = ?
+      ORDER BY csa.id DESC
+    `;
+
+    const [centerRows] = await db.query(centerQuery, [resolvedServiceId]);
+
+    if (!centerRows || centerRows.length === 0) {
+      console.warn(
+        `⚠️ No center quota configuration for service_id ${resolvedServiceId}, skipping export email`,
+      );
+      return;
+    }
+
+    const servicePool = getPoolByService(serviceName);
     // Check subscriber table exists in service DB
     const [subscriberTableExists] = await servicePool.query(
       `SELECT 1 FROM information_schema.tables
@@ -246,7 +318,7 @@ async function SendEmailResults(job, tableName) {
     );
     if (subscriberTableExists.length === 0) {
       console.warn(
-        `⚠️ 'subscriber' table missing in ${job.service} DB, skipping export email`,
+        `⚠️ 'subscriber' table missing in ${serviceName} DB, skipping export email`,
       );
       return;
     }
@@ -340,63 +412,105 @@ async function SendEmailResults(job, tableName) {
       return;
     }
 
-    // Build Excel in memory
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("data");
-    sheet.getRow(1).font = { bold: true };
-    sheet.columns = [
-      { header: "Sr No", key: "srNo", width: 10 },
-      { header: "Msisdn", key: "msisdn", width: 20 },
-      { header: "Balance", key: "balance", width: 15 },
-    ];
-
-    let serialNo = 1;
-    for (const row of filteredRows) {
-      sheet.addRow({
-        srNo: serialNo++,
-        msisdn: row.msisdn,
-        balance: row.balance ? Number(row.balance) / 100 : null,
-      });
+    // Fisher–Yates shuffle so picks are random and unique (no overlap between centers)
+    const shuffled = [...filteredRows];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
 
-    const excelBuffer = await workbook.xlsx.writeBuffer();
-    const fileName = `${job.service}_${tableName}_export.xlsx`;
-    const email = "awais@Webdoc.com.pk";
+    const total = shuffled.length;
 
-    const mailResult = await sendMail({
-      to: email,
-      cc: "hamzabhatti021@gmail.com",
-      subject: `Export: ${job.file_name} (${job.service})`,
-      html: `
-        <p>Hi,</p>
-        <p>Please find attached the exported data for <strong>${job.file_name}</strong>.</p>
-        <ul>
-          <li><strong>Service:</strong> ${job.service}</li>
-          <li><strong>Total Records:</strong> ${filteredRows.length}</li>
-          <li><strong>Balance Limit:</strong> ${job.balance_limit}</li>
-        </ul>
-        <p>Regards,<br/>WEBDOC System</p>
-      `,
-      attachments: [
-        {
-          filename: fileName,
-          content: excelBuffer,
-          contentType:
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        },
-      ],
-    });
+    // Largest remainder method: honors percentage quotas as closely as possible
+    const rawCounts = centerRows.map(
+      (c) => (total * Number(c.percentage_quota)) / 100,
+    );
+    const floorCounts = rawCounts.map((n) => Math.floor(n));
+    const allocated = floorCounts.reduce((a, b) => a + b, 0);
+    const remainder = total - allocated;
 
-    if (!mailResult.success) {
+    const fractionalOrder = rawCounts
+      .map((n, idx) => ({ idx, frac: n - Math.floor(n) }))
+      .sort((a, b) => b.frac - a.frac);
+
+    const counts = [...floorCounts];
+    for (let k = 0; k < remainder; k++) {
+      counts[fractionalOrder[k % fractionalOrder.length].idx] += 1;
+    }
+
+    let cursor = 0;
+    let emailsSent = 0;
+    let emailsFailed = 0;
+
+    for (let i = 0; i < centerRows.length; i++) {
+      const center = centerRows[i];
+      const count = counts[i];
+      const centerRowsSlice = shuffled.slice(cursor, cursor + count);
+      cursor += count;
+
+      if (centerRowsSlice.length === 0) {
+        console.log(
+          `⏭️ Skipping ${center.center_name}: no records allocated (0 after rounding)`,
+        );
+        continue;
+      }
+
+      const excelBuffer = await buildExcelBuffer(centerRowsSlice);
+      const fileName = `${serviceName}_${center.center_name}_${tableName}_export.xlsx`;
+
+      const mailResult = await sendMail({
+        to: center.poc_email,
+        cc: center.cc_email,
+        subject: `Export: ${job.file_name} (${serviceName} - ${center.center_name})`,
+        html: `
+          <p>Hi,</p>
+          <p>Please find attached the exported data for <strong>${job.file_name}</strong>.</p>
+          <ul>
+            <li><strong>Service:</strong> ${serviceName}</li>
+            <li><strong>Center:</strong> ${center.center_name}</li>
+            <li><strong>Quota:</strong> ${center.percentage_quota}%</li>
+            <li><strong>Balance Limit:</strong> ${job.balance_limit}</li>
+            <li><strong>Total After Balance Filter:</strong> ${responseRows.length}</li>
+            ${job.remove_sub == 1 ? `<li><strong>Active Subscribers Removed:</strong> ${subscriberSet.size}</li>` : ""}
+            ${job.remove_unsub == 1 ? `<li><strong>Recent Unsubs Removed (last ${job.days ?? 0} days):</strong> ${unsubSet.size}</li>` : ""}
+            <li><strong>Records in This File:</strong> ${centerRowsSlice.length}</li>
+          </ul>
+          <p>Regards,<br/>WEBDOC System</p>
+        `,
+        attachments: [
+          {
+            filename: fileName,
+            content: excelBuffer,
+            contentType:
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          },
+        ],
+      });
+
+      if (!mailResult.success) {
+        emailsFailed++;
+        console.error(
+          `❌ Email failed for ${center.center_name} (${center.poc_email}):`,
+          mailResult.error,
+        );
+        continue;
+      }
+
+      emailsSent++;
+      console.log(
+        `📧 Export emailed to ${center.center_name} (${center.poc_email}) — ${centerRowsSlice.length} records`,
+      );
+    }
+
+    if (emailsFailed > 0) {
       console.error(
-        `❌ Export generated but email failed for job ${job.id}:`,
-        mailResult.error,
+        `❌ Job ${job.id}: ${emailsSent} center email(s) sent, ${emailsFailed} failed`,
       );
       return;
     }
 
     console.log(
-      `📧 Export emailed successfully to ${email} (${filteredRows.length} records)`,
+      `📧 Job ${job.id}: export emailed to all ${emailsSent} center(s) (${filteredRows.length} total records)`,
     );
   } catch (err) {
     // Don't let an export/email failure mark a completed job as failed
