@@ -41,6 +41,13 @@ async function createResponseTable(tableName) {
   console.log(`✅ Table ready: ${tableName}`);
 }
 
+function buildResponseTableName(job) {
+  const service = String(job.service || "UNKNOWN")
+    .replace(/[^a-zA-Z0-9_]/g, "_")
+    .toUpperCase();
+  return `ResponseData_${service}_${job.id}_${Date.now()}`;
+}
+
 async function fetchBalance(msisdn) {
   const url = `${BALANCE_API_BASE}/balanceQuery/${msisdn}/P`;
   let lastErr;
@@ -117,7 +124,7 @@ async function processBatch(batch, tableName, semaphore) {
 async function processFile(job) {
   console.log(`\n🚀 Starting job ID: ${job.id}`);
   console.log(`📁 File: ${job.file_path || job.file_name}`);
-
+  console.log("job ==", job);
   const filePath = job.file_path || job.file_name;
   if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`);
@@ -127,7 +134,7 @@ async function processFile(job) {
   let tableName = job.response_table_name;
 
   if (!tableName) {
-    tableName = `ResponseData_${job.id}_${Date.now()}`;
+    tableName = buildResponseTableName(job);
     await createResponseTable(tableName);
     await queryWithRetry(
       `UPDATE file_entity SET response_table_name = ? WHERE id = ?`,
@@ -262,11 +269,10 @@ async function buildExcelBuffer(rows) {
 
 async function SendEmailResults(job, tableName) {
   try {
-   
     let serviceName = job.service;
-    let resolvedServiceId ;
+    let resolvedServiceId;
 
-   if (serviceName) {
+    if (serviceName) {
       const [serviceRows] = await db.query(
         `SELECT id, name FROM services WHERE name = ? AND active = TRUE LIMIT 1`,
         [serviceName],
@@ -281,7 +287,7 @@ async function SendEmailResults(job, tableName) {
       serviceName = serviceRows[0].name;
     } else {
       console.warn("⚠️ No service on job, skipping export email");
-      console.log("job ==>",job);
+      console.log("job ==>", job);
       return;
     }
 

@@ -38,7 +38,7 @@ const statusConfig = {
     bg: "bg-amber-50 border-amber-200",
     label: "pending",
   },
-  error: {
+  failed: {
     icon: AlertCircle,
     color: "text-red-700",
     bg: "bg-red-50 border-red-200",
@@ -296,6 +296,7 @@ export default function Files() {
               ) : (
                 files?.map((file) => {
                   const cfg = statusConfig[file?.status.toLowerCase()] || {};
+                  console.log(cfg);
                   const Icon = cfg?.icon;
                   return (
                     <tr

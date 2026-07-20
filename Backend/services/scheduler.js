@@ -27,13 +27,30 @@ async function claimNextJob() {
     LIMIT 5
   `);
 
+  if (candidates.length === 0) {
+    // Help diagnose "uploaded but cron does nothing" — usually FAILED, or
+    // PENDING with schedule_time still in the future.
+    const [[stats]] = await queryWithRetry(`
+      SELECT
+        SUM(status = 'PENDING' AND (schedule_time IS NULL OR schedule_time <= NOW())) AS due,
+        SUM(status = 'PENDING' AND schedule_time > NOW()) AS waiting,
+        SUM(status = 'PROCESSING') AS processing,
+        SUM(status = 'FAILED') AS failed
+      FROM file_entity
+    `);
+    console.log("no candidates —", stats);
+  }
+
   for (const candidate of candidates) {
     const [result] = await queryWithRetry(
       `
       UPDATE file_entity
       SET status = 'PROCESSING', locked_at = NOW(), worker_id = ?
       WHERE id = ?
-        AND (status = 'PENDING' OR (status = 'PROCESSING' AND locked_at < NOW() - INTERVAL ${STUCK_AFTER_MINUTES} MINUTE))
+        AND (
+          (status = 'PENDING' AND (schedule_time IS NULL OR schedule_time <= NOW()))
+          OR (status = 'PROCESSING' AND locked_at < NOW() - INTERVAL ${STUCK_AFTER_MINUTES} MINUTE)
+        )
       `,
       [WORKER_ID, candidate.id],
     );
@@ -68,7 +85,7 @@ async function runJob(job) {
     await processFile(job);
     console.log(`✅ Job completed ${job.id}`);
   } catch (err) {
-    console.error(`❌ Job failed ${job.id}:`, err.message);
+    console.error(`❌ Job failed ${job.id}:`, err);
     // Leave status as PROCESSING with the checkpoint intact so it auto-resumes
     // next tick once it's past the stuck threshold — UNLESS it's a permanent
     // error (e.g. file missing), in which case mark FAILED so it stops retrying.

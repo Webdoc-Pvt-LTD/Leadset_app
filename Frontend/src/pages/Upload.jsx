@@ -24,7 +24,7 @@ const initialForm = {
   },
   remove_sub: true,
   remove_unsub: false,
-  days: "",
+  days: 0,
   file: null,
 };
 
@@ -98,6 +98,8 @@ export default function Upload() {
 
   const reset = () => {
     setForm(initialForm);
+    setServices([]);
+    setQuota(null);
     setErrors({});
     setSubmitted(false);
   };
@@ -189,7 +191,7 @@ export default function Upload() {
         </div>
         <div className="card text-left w-full max-w-sm text-sm space-y-3 mt-2">
           {[
-            ["Service", form.service],
+            ["Service", form.service.name],
             ["Scheduled", form.scheduleTime],
             ["Balance Limit", `$${form.balance_limit}`],
             ["File", form.file?.name],

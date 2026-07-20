@@ -46,7 +46,13 @@ const uploadFile = async (req, res) => {
       remove_unsub,
       days,
     } = req.body;
-
+    // return sendResponse({
+    //   res,
+    //   success: true,
+    //   message: "File is required",
+    //   statusCode: 200,
+    //   data: req.body,
+    // });
     if (!req.file) {
       return sendResponse({
         res,
@@ -63,7 +69,9 @@ const uploadFile = async (req, res) => {
         statusCode: 400,
       });
     }
-    const finalDays = remove_unsub ? days : 0;
+    const removeSub = req.body.remove_sub === "true";
+    const removeUnsub = req.body.remove_unsub === "true";
+    const finalDays = removeUnsub ? Number(days) : 0;
     const filePath = path.resolve(req.file.path);
     const fileName = req.file.originalname;
     const total_record = await countFileRecords(filePath);
@@ -95,6 +103,11 @@ const uploadFile = async (req, res) => {
       balance_limit !== undefined && balance_limit !== null
         ? parseFloat(balance_limit)
         : null;
+    // Keep the user's schedule as-is (PST wall clock). datetime-local sends
+    // "YYYY-MM-DDTHH:mm" — MySQL accepts it with T or space.
+    const resolvedSchedule = scheduleTime
+      ? String(scheduleTime).trim().replace("T", " ")
+      : null;
     const [insertResult] = await db.query(
       `
   INSERT INTO file_entity
@@ -118,12 +131,12 @@ const uploadFile = async (req, res) => {
         fileName,
         filePath,
         jobName || null,
-        scheduleTime || null,
+        resolvedSchedule,
         total_record,
         balanceLimitDecimal,
         service || null,
-        remove_sub ? 1 : 0,
-        remove_unsub ? 1 : 0,
+        removeSub ? 1 : 0,
+        removeUnsub ? 1 : 0,
         finalDays,
       ],
     );
@@ -151,72 +164,7 @@ const uploadFile = async (req, res) => {
     });
   }
 };
-// const getFiles = async (req, res) => {
-//   try {
-//     const page = parseInt(req.query.page) || 1;
-//     const limit = parseInt(req.query.limit) || 10;
-//     const offset = (page - 1) * limit;
 
-//     // Total Records
-//     const [[{ total }]] = await db.query(
-//       `SELECT COUNT(*) AS total FROM file_entity`,
-//     );
-
-//     // Paginated Records
-//     const [rows] = await db.query(
-//       `
-//       SELECT
-//         id,
-//         file_path,
-//         file_name,
-//         job_name,
-//         processed_record,
-//         response_table_name,
-//         status,
-//         total_record,
-//         upload_date,
-//         schedule_time,
-//         job_start_date,
-//         job_end_date,
-//         balance_limit,
-//         service,
-//         remove_sub,
-//         remove_unsub,
-//         days
-//       FROM file_entity
-//       ORDER BY upload_date DESC
-//       LIMIT ? OFFSET ?
-//       `,
-//       [limit, offset],
-//     );
-
-//     return sendResponse({
-//       res,
-//       success: true,
-//       message: "Files fetched successfully",
-//       statusCode: 200,
-//       data: {
-//         files: rows,
-//         pagination: {
-//           total,
-//           page,
-//           limit,
-//           totalPages: Math.ceil(total / limit),
-//         },
-//       },
-//     });
-//   } catch (error) {
-//     console.error(error);
-
-//     return sendResponse({
-//       res,
-//       success: false,
-//       message: "Failed to fetch files",
-//       statusCode: 500,
-//       error: error.message,
-//     });
-//   }
-// };
 const getFiles = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
