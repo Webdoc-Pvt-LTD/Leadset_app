@@ -27,14 +27,17 @@ const httpClient = axios.create({
 
 async function createResponseTable(tableName) {
   console.log(`📦 Creating table: ${tableName}`);
+
   await queryWithRetry(`
     CREATE TABLE IF NOT EXISTS \`${tableName}\` (
       id BIGINT AUTO_INCREMENT PRIMARY KEY,
       msisdn VARCHAR(20),
+      service VARCHAR(100),
       data JSON,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
   console.log(`✅ Table ready: ${tableName}`);
 }
 

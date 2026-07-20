@@ -152,7 +152,7 @@ export default function Files() {
           responseType: "blob",
         },
       );
-      return;
+
       const contentDisposition = response.headers["content-disposition"];
       const baseName = selectedFile.file_name.replace(/\.[^/.]+$/, "");
       let fileName = `export_${baseName}.xlsx`;
@@ -531,14 +531,14 @@ export default function Files() {
 
               <div className="space-y-4">
                 <strong>Applied Filters</strong>
-                <label className="flex items-center gap-3">
+                <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={selectedFile?.remove_sub ?? false}
+                    checked={!!selectedFile?.remove_sub}
                     onChange={(e) =>
                       setSelectedFile((prev) => ({
                         ...prev,
-                        removeSub: e.target.checked,
+                        remove_sub: e.target.checked,
                       }))
                     }
                     className="w-4 h-4 accent-indigo-600"
