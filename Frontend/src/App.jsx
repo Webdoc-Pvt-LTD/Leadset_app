@@ -8,6 +8,7 @@ import Upload from "./pages/Upload";
 import Files from "./pages/Files";
 import Centers from "./pages/Centers";
 import Services from "./pages/Services";
+import RoleProtectedRoute from "./components/RoleProctectedRoute";
 export default function App() {
   return (
     <AuthProvider>
@@ -23,11 +24,47 @@ export default function App() {
             }
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="upload" element={<Upload />} />
-            <Route path="files" element={<Files />} />
-            <Route path="centers" element={<Centers />} />
-            <Route path="services" element={<Services />} />
+            <Route
+              path="dashboard"
+              element={
+                <RoleProtectedRoute allowedRoles={["admin", "agent"]}>
+                  <Dashboard />
+                </RoleProtectedRoute>
+              }
+            />
+            <Route
+              path="upload"
+              element={
+                <RoleProtectedRoute allowedRoles={["admin", "agent"]}>
+                  <Upload />
+                </RoleProtectedRoute>
+              }
+            />
+            <Route
+              path="files"
+              element={
+                <RoleProtectedRoute allowedRoles={["admin", "agent"]}>
+                  <Files />
+                </RoleProtectedRoute>
+              }
+            />
+            <Route
+              path="centers"
+              element={
+                <RoleProtectedRoute allowedRoles={["admin"]}>
+                  <Centers />
+                </RoleProtectedRoute>
+              }
+            />
+
+            <Route
+              path="services"
+              element={
+                <RoleProtectedRoute allowedRoles={["admin"]}>
+                  <Services />
+                </RoleProtectedRoute>
+              }
+            />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
