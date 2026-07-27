@@ -74,7 +74,7 @@ async function fetchBalance(msisdn) {
   throw lastErr;
 }
 
-async function processBatch(batch, tableName, semaphore) {
+async function processBatch(batch, tableName, semaphore,service) {
   let successCount = 0;
   let failCount = 0;
   const results = [];
@@ -96,9 +96,9 @@ async function processBatch(batch, tableName, semaphore) {
   );
 
   if (results.length > 0) {
-    const values = results.map((r) => [r.msisdn, JSON.stringify(r.data)]);
+    const values = results.map((r) => [r.msisdn, service, JSON.stringify(r.data)]);
     await queryWithRetry(
-      `INSERT INTO \`${tableName}\` (msisdn, data) VALUES ?`,
+      `INSERT INTO \`${tableName}\` (msisdn, service, data) VALUES ?`,
       [values],
     );
   }
@@ -124,7 +124,6 @@ async function processBatch(batch, tableName, semaphore) {
 async function processFile(job) {
   console.log(`\n🚀 Starting job ID: ${job.id}`);
   console.log(`📁 File: ${job.file_path || job.file_name}`);
-  console.log("job ==", job);
   const filePath = job.file_path || job.file_name;
   if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`);
@@ -166,7 +165,7 @@ async function processFile(job) {
     batchCount++;
     console.log(`📦 Processing batch #${batchCount} (${batch.length} records)`);
 
-    await processBatch(batch, tableName, semaphore);
+    await processBatch(batch, tableName, semaphore,job.service);
     totalProcessed += batch.length;
 
     // Checkpoint AFTER successful batch processing — this is what makes
