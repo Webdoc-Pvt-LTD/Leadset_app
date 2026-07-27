@@ -52,7 +52,11 @@ const getStatus = async (req, res) => {
       statusCode: 200,
       data: {
         pool,
-        services: services.map((s) => s.name),
+        services: services.map((s) => ({
+          name: s.name,
+          batch_size: s.batch_size,
+          schedule_time: s.schedule_time,
+        })),
         defaults: {
           batch_size: autoBatch.DEFAULT_BATCH_SIZE,
           balance_limit: autoBatch.DEFAULT_BALANCE_LIMIT,
@@ -78,22 +82,18 @@ const getStatus = async (req, res) => {
 
 /**
  * POST /api/auto-batch/run-now
- * Fire the same path the cron uses (next service in rotation).
+ * Create one batch file per active service (same logic as cron).
  */
 const runNow = async (req, res) => {
   try {
-    const {schedule_time} = req.body || {};
-    const batch = await autoBatch.createBatch({
-      batchSize: autoBatch.DEFAULT_BATCH_SIZE,
-      scheduleTime: schedule_time || null,
-    });
+    const batches = await autoBatch.createBatchesForAllServices();
     const pool = await autoBatch.getPoolStats();
     return sendResponse({
       res,
       success: true,
-      message: "Auto-batch created",
+      message: `${batches.length} auto-batch file(s) created`,
       statusCode: 200,
-      data: { batch, pool },
+      data: { batches, pool },
     });
   } catch (error) {
     return sendResponse({
