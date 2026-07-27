@@ -600,9 +600,8 @@ export default function Files() {
                 </button>
                 <button
                   onClick={() => handleDownload(true)}
-                  className={
-                    "inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white hover:bg-indigo-700"
-                  }
+                  className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
+
                   disabled={
                     selectedFile?.status !== "COMPLETED"
                     // || !selectedFile?.days
