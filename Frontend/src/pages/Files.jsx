@@ -15,8 +15,7 @@ import {
   SendIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import axios from "axios";
-import { BASE_URL } from "../config";
+import api from "../lib/api";
 import LoaderSpinner from "../components/loader";
 import { formatNumber, formatDateTime } from "../helper/formatters";
 const statusConfig = {
@@ -100,7 +99,7 @@ export default function Files() {
     try {
       setLoading(true);
 
-      const res = await axios.get(`${BASE_URL}/files/all`, {
+      const res = await api.get("/files/all", {
         params: {
           page,
           limit,
@@ -137,8 +136,8 @@ export default function Files() {
   const handleDownload = async (sendEmailFlag) => {
     try {
       setLoading(true);
-      const response = await axios.post(
-        `${BASE_URL}/files/export`,
+      const response = await api.post(
+        "/files/export",
         {
           id: selectedFile.id,
           unsub_days: selectedFile.days || 0,
@@ -187,21 +186,13 @@ export default function Files() {
         message: emailData.message,
       };
 
-      const response = await axios.post(
-        `${BASE_URL}/files/send-email`,
-        payload,
-      );
+      const response = await api.post("/files/send-email", payload);
 
       if (response.data.success) {
-        alert("Email sent successfully!");
         setShowEmailDrawer(false);
-      } else {
-        alert(response.data.message);
       }
     } catch (error) {
-      console.error(error);
-
-      alert(error.response?.data?.message || "Failed to send email.");
+      // Error toast handled by API interceptor
     }
   };
   if (loading) return <LoaderSpinner />;
@@ -333,7 +324,7 @@ export default function Files() {
                           <Icon
                             size={11}
                             className={
-                              file.status === "processing" ? "animate-spin" : ""
+                              file.status.toLowerCase() === "processing" ? "animate-spin" : ""
                             }
                           />
                           {cfg?.label}

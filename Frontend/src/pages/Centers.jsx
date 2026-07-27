@@ -1,7 +1,6 @@
 import { Search, Plus, Building2, PencilIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import axios from "axios";
-import { BASE_URL } from "../config";
+import api from "../lib/api";
 import LoaderSpinner from "../components/loader";
 
 export default function Centers() {
@@ -20,7 +19,7 @@ export default function Centers() {
     try {
       setLoading(true);
 
-      const response = await axios.get(`${BASE_URL}/centers/all`);
+      const response = await api.get("/centers/all");
 
       if (response.data.success) {
         setCenters(response.data.data);
@@ -38,7 +37,7 @@ export default function Centers() {
     try {
       setSaving(true);
 
-      const { data } = await axios.post(`${BASE_URL}/centers/create`, {
+      const { data } = await api.post("/centers/create", {
         name: centerName,
       });
 
@@ -50,7 +49,7 @@ export default function Centers() {
         fetchCenters();
       }
     } catch (err) {
-      console.log(err.response?.data?.message || "Failed to create center");
+      // Error toast handled by API interceptor
     } finally {
       setSaving(false);
     }
@@ -61,13 +60,10 @@ export default function Centers() {
     try {
       setUpdating(true);
 
-      const { data } = await axios.put(
-        `${BASE_URL}/centers/update/${selectedCenter.id}`,
-        {
-          name: editName,
-          is_active: editStatus,
-        },
-      );
+      const { data } = await api.put(`/centers/update/${selectedCenter.id}`, {
+        name: editName,
+        is_active: editStatus,
+      });
 
       if (data.success) {
         setShowPanel(false);
@@ -75,7 +71,7 @@ export default function Centers() {
         fetchCenters();
       }
     } catch (err) {
-      console.log(err.response?.data?.message || "Failed to update center");
+      // Error toast handled by API interceptor
     } finally {
       setUpdating(false);
     }

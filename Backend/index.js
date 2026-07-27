@@ -1,8 +1,8 @@
 const express = require("express");
 const db = require("./config/connection");
 const { isRetryable, sleep } = require("./utils/db-retry");
-require("./services/scheduler");
-require("./services/auto-batch-scheduler");
+// require("./services/scheduler");
+// require("./services/auto-batch-scheduler");
 const { sendResponse } = require("./lib/api-response");
 const fileRoutes = require("./routes/file-routes");
 const dashboardRoutes = require("./routes/dashboard-routes");
