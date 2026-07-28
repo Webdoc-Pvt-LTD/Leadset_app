@@ -7,6 +7,29 @@ const processFile = require("./file-processor");
 
 const WORKER_ID = `${os.hostname()}-${process.pid}`;
 const STUCK_AFTER_MINUTES = 10; // no checkpoint update in this window = assume dead
+const STUCK_INTERVAL = `INTERVAL ${STUCK_AFTER_MINUTES} MINUTE`;
+
+// Shared claim rules (SELECT + UPDATE must stay in sync):
+// - PENDING + due (schedule_time null or passed)
+// - PENDING + never locked but overdue (due for STUCK_AFTER_MINUTES+)
+// - PENDING + stale lock while still pending (orphaned)
+// - PROCESSING + stale heartbeat (crashed worker)
+const JOB_CLAIM_WHERE = `
+  (status = 'PENDING' AND (
+    schedule_time IS NULL
+    OR schedule_time <= NOW()
+  ))
+  OR (status = 'PENDING'
+    AND locked_at IS NULL
+    AND worker_id IS NULL
+    AND schedule_time IS NOT NULL
+    AND schedule_time <= NOW() - ${STUCK_INTERVAL})
+  OR (status = 'PENDING'
+    AND locked_at IS NOT NULL
+    AND locked_at < NOW() - ${STUCK_INTERVAL})
+  OR (status = 'PROCESSING'
+    AND locked_at < NOW() - ${STUCK_INTERVAL})
+`;
 // How many files can be PROCESSING at once. This does NOT control HTTP
 // concurrency (job-budget-manager.js does that) — it just caps how many
 // files' streams are open at a time. Set >=2 so jobs scheduled minutes
@@ -28,14 +51,12 @@ async function releaseJob(jobId) {
 }
 
 async function claimNextJob() {
-  // Pick PENDING jobs that are due, OR PROCESSING jobs whose last checkpoint
-  // is stale (worker crashed mid-job). Atomic UPDATE...WHERE acts as the lock:
-  // if two cron ticks race, only one UPDATE actually matches+affects a row.
+  // Pick due PENDING jobs, stuck PENDING jobs (never locked / stale lock),
+  // or PROCESSING jobs whose last checkpoint is stale (worker crashed mid-job).
   console.log("claim next job");
   const [candidates] = await queryWithRetry(`
     SELECT id, file_path, file_name FROM file_entity
-    WHERE (status = 'PENDING' AND (schedule_time IS NULL OR schedule_time <= NOW()))
-       OR (status = 'PROCESSING' AND locked_at < NOW() - INTERVAL ${STUCK_AFTER_MINUTES} MINUTE)
+    WHERE ${JOB_CLAIM_WHERE}
     ORDER BY id ASC
     LIMIT 10
   `);
@@ -45,6 +66,11 @@ async function claimNextJob() {
     const [[stats]] = await queryWithRetry(`
       SELECT
         SUM(status = 'PENDING' AND (schedule_time IS NULL OR schedule_time <= NOW())) AS due,
+        SUM(status = 'PENDING'
+          AND locked_at IS NULL
+          AND worker_id IS NULL
+          AND schedule_time IS NOT NULL
+          AND schedule_time <= NOW() - ${STUCK_INTERVAL}) AS stuck_pending,
         SUM(status = 'PENDING' AND schedule_time > NOW()) AS waiting,
         SUM(status = 'PROCESSING') AS processing,
         SUM(status = 'FAILED') AS failed
@@ -70,10 +96,7 @@ async function claimNextJob() {
       UPDATE file_entity
       SET status = 'PROCESSING', locked_at = NOW(), worker_id = ?
       WHERE id = ?
-        AND (
-          (status = 'PENDING' AND (schedule_time IS NULL OR schedule_time <= NOW()))
-          OR (status = 'PROCESSING' AND locked_at < NOW() - INTERVAL ${STUCK_AFTER_MINUTES} MINUTE)
-        )
+        AND (${JOB_CLAIM_WHERE})
       `,
       [WORKER_ID, candidate.id],
     );
