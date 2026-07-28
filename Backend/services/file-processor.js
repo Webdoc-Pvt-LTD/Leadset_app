@@ -7,6 +7,7 @@ const { getPoolByService } = require("../config/subscriber-connection");
 const db = require("../config/connection");
 const ExcelJS = require("exceljs");
 const { sendMail } = require("../services/mailer");
+const { applyExportFilters } = require("./export-filters");
 
 // Larger batches mean fewer "stall" gaps between batches (see file-processor
 // notes) and fewer DB round-trips, at the cost of reprocessing more records
@@ -27,15 +28,25 @@ const httpClient = axios.create({
 
 async function createResponseTable(tableName) {
   console.log(`📦 Creating table: ${tableName}`);
+
   await queryWithRetry(`
     CREATE TABLE IF NOT EXISTS \`${tableName}\` (
       id BIGINT AUTO_INCREMENT PRIMARY KEY,
       msisdn VARCHAR(20),
+      service VARCHAR(100),
       data JSON,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
   console.log(`✅ Table ready: ${tableName}`);
+}
+
+function buildResponseTableName(job) {
+  const service = String(job.service || "UNKNOWN")
+    .replace(/[^a-zA-Z0-9_]/g, "_")
+    .toUpperCase();
+  return `ResponseData_${service}_${job.id}_${Date.now()}`;
 }
 
 async function fetchBalance(msisdn) {
@@ -64,7 +75,7 @@ async function fetchBalance(msisdn) {
   throw lastErr;
 }
 
-async function processBatch(batch, tableName, semaphore) {
+async function processBatch(batch, tableName, semaphore,service) {
   let successCount = 0;
   let failCount = 0;
   const results = [];
@@ -86,9 +97,9 @@ async function processBatch(batch, tableName, semaphore) {
   );
 
   if (results.length > 0) {
-    const values = results.map((r) => [r.msisdn, JSON.stringify(r.data)]);
+    const values = results.map((r) => [r.msisdn, service, JSON.stringify(r.data)]);
     await queryWithRetry(
-      `INSERT INTO \`${tableName}\` (msisdn, data) VALUES ?`,
+      `INSERT INTO \`${tableName}\` (msisdn, service, data) VALUES ?`,
       [values],
     );
   }
@@ -114,7 +125,6 @@ async function processBatch(batch, tableName, semaphore) {
 async function processFile(job) {
   console.log(`\n🚀 Starting job ID: ${job.id}`);
   console.log(`📁 File: ${job.file_path || job.file_name}`);
-
   const filePath = job.file_path || job.file_name;
   if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`);
@@ -124,7 +134,7 @@ async function processFile(job) {
   let tableName = job.response_table_name;
 
   if (!tableName) {
-    tableName = `ResponseData_${job.id}_${Date.now()}`;
+    tableName = buildResponseTableName(job);
     await createResponseTable(tableName);
     await queryWithRetry(
       `UPDATE file_entity SET response_table_name = ? WHERE id = ?`,
@@ -156,7 +166,7 @@ async function processFile(job) {
     batchCount++;
     console.log(`📦 Processing batch #${batchCount} (${batch.length} records)`);
 
-    await processBatch(batch, tableName, semaphore);
+    await processBatch(batch, tableName, semaphore,job.service);
     totalProcessed += batch.length;
 
     // Checkpoint AFTER successful batch processing — this is what makes
@@ -259,11 +269,10 @@ async function buildExcelBuffer(rows) {
 
 async function SendEmailResults(job, tableName) {
   try {
-   
     let serviceName = job.service;
-    let resolvedServiceId ;
+    let resolvedServiceId;
 
-   if (serviceName) {
+    if (serviceName) {
       const [serviceRows] = await db.query(
         `SELECT id, name FROM services WHERE name = ? AND active = TRUE LIMIT 1`,
         [serviceName],
@@ -278,7 +287,7 @@ async function SendEmailResults(job, tableName) {
       serviceName = serviceRows[0].name;
     } else {
       console.warn("⚠️ No service on job, skipping export email");
-      console.log("job ==>",job);
+      console.log("job ==>", job);
       return;
     }
 
@@ -343,72 +352,22 @@ async function SendEmailResults(job, tableName) {
       return;
     }
 
-    const msisdnList = responseRows.map((r) => String(r.msisdn));
-
-    // Batch-check against subscriber table
-    const BATCH_SIZE = 1000;
-    const subscriberSet = new Set();
-
-    if (job.remove_sub == 1) {
-      console.log("Applying remove_sub filter...");
-
-      for (let i = 0; i < msisdnList.length; i += BATCH_SIZE) {
-        const batch = msisdnList.slice(i, i + BATCH_SIZE);
-        const placeholders = batch.map(() => "?").join(", ");
-
-        const [subRows] = await servicePool.query(
-          `SELECT cellno FROM subscriber
-           WHERE cellno IN (${placeholders})
-             AND unsub_dt IS NULL`, // active subscribers only
-          batch,
-        );
-
-        subRows.forEach((row) => {
-          subscriberSet.add(String(row.cellno).replace(/^0/, ""));
-        });
-      }
-
-      console.log(`Active subscribers to remove: ${subscriberSet.size}`);
-    }
-
-    // ─────────────────────────────────────────────
-    // STEP 8: Filter recently unsubscribed (remove_unsub)
-    // ─────────────────────────────────────────────
-    const unsubSet = new Set();
-
-    if (job.remove_unsub == 1) {
-      const days = Number(job.days ?? 0);
-      console.log(`Applying remove_unsub filter for last ${days} days...`);
-
-      for (let i = 0; i < msisdnList.length; i += BATCH_SIZE) {
-        const batch = msisdnList.slice(i, i + BATCH_SIZE);
-        const placeholders = batch.map(() => "?").join(", ");
-
-        // Fetch records unsubscribed within the last N days
-        const [unsubRows] = await servicePool.query(
-          `SELECT cellno FROM subscriber_unsub
-           WHERE cellno IN (${placeholders})
-             AND unsub_dt >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
-          [...batch, days],
-        );
-
-        unsubRows.forEach((row) => {
-          unsubSet.add(String(row.cellno).replace(/^0/, ""));
-        });
-      }
-
-      console.log(`Recently unsubscribed to remove: ${unsubSet.size}`);
-    }
-
-    const filteredRows = responseRows.filter((row) => {
-      const msisdn = String(row.msisdn);
-      if (subscriberSet.has(msisdn)) return false; // remove active sub
-      if (unsubSet.has(msisdn)) return false; // remove recent unsub
-      return true;
+    const {
+      filteredRows,
+      dncRemovedCount,
+      subscriberSet,
+      unsubSet,
+    } = await applyExportFilters({
+      responseRows,
+      db,
+      servicePool,
+      removeSub: job.remove_sub == 1,
+      removeUnsub: job.remove_unsub == 1,
+      unsubDays: job.days ?? 0,
     });
 
     if (filteredRows.length === 0) {
-      console.log("No records left after subscriber filtering, skipping email");
+      console.log("No records left after filtering, skipping email");
       return;
     }
 
@@ -471,6 +430,7 @@ async function SendEmailResults(job, tableName) {
             <li><strong>Quota:</strong> ${center.percentage_quota}%</li>
             <li><strong>Balance Limit:</strong> ${job.balance_limit}</li>
             <li><strong>Total After Balance Filter:</strong> ${responseRows.length}</li>
+            <li><strong>DNC Numbers Removed:</strong> ${dncRemovedCount}</li>
             ${job.remove_sub == 1 ? `<li><strong>Active Subscribers Removed:</strong> ${subscriberSet.size}</li>` : ""}
             ${job.remove_unsub == 1 ? `<li><strong>Recent Unsubs Removed (last ${job.days ?? 0} days):</strong> ${unsubSet.size}</li>` : ""}
             <li><strong>Records in This File:</strong> ${centerRowsSlice.length}</li>

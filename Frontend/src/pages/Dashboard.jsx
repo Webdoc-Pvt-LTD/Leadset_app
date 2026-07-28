@@ -8,8 +8,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
-import { BASE_URL } from "../config";
+import api from "../lib/api";
 import { useEffect, useState } from "react";
 import LoaderSpinner from "../components/loader";
 const stats = [
@@ -88,7 +87,7 @@ export default function Dashboard() {
     try {
       setLoading(true);
 
-      const { data } = await axios.get(`${BASE_URL}/dashboard/stats`);
+      const { data } = await api.get("/dashboard/stats");
 
       if (data.success) {
         setStats(data.data);

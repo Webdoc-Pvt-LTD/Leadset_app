@@ -1,7 +1,7 @@
-import { Search, Plus, Briefcase, AlertTriangle } from "lucide-react";
+import { Search, Briefcase, AlertTriangle, Pencil } from "lucide-react";
 import { useEffect, useState } from "react";
-import axios from "axios";
-import { BASE_URL } from "../config";
+import api from "../lib/api";
+import { toastError } from "../helper/toast";
 import LoaderSpinner from "../components/loader";
 
 export default function Services() {
@@ -20,6 +20,12 @@ export default function Services() {
   const [assignments, setAssignments] = useState([]);
   const [saving, setSaving] = useState(false);
 
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingService, setEditingService] = useState(null);
+  const [editScheduleTime, setEditScheduleTime] = useState("");
+  const [editBatchSize, setEditBatchSize] = useState("");
+  const [updatingService, setUpdatingService] = useState(false);
+
   const isOverQuota = assignedQuota > 100;
   const isFullyAllocated = assignedQuota === 100;
 
@@ -31,7 +37,7 @@ export default function Services() {
     try {
       setLoading(true);
 
-      const response = await axios.get(`${BASE_URL}/services/all`);
+      const response = await api.get("/services/all");
 
       if (response.data.success) {
         setServices(response.data.data);
@@ -49,7 +55,7 @@ export default function Services() {
 
   const fetchCenters = async () => {
     try {
-      const response = await axios.get(`${BASE_URL}/centers/all`);
+      const response = await api.get("/centers/all");
 
       if (response.data.success) {
         setCenters(response.data.data);
@@ -90,9 +96,7 @@ export default function Services() {
       setSelectedService(service);
       setShowPanel(true);
 
-      const response = await axios.get(
-        `${BASE_URL}/services/${service.id}/quota`,
-      );
+      const response = await api.get(`/services/${service.id}/quota`);
 
       if (response.data.success) {
         const data = response.data.data;
@@ -134,7 +138,7 @@ export default function Services() {
     );
 
     if (exists) {
-      alert("Center already assigned");
+      toastError("Center already assigned");
       return;
     }
 
@@ -186,7 +190,7 @@ export default function Services() {
   const saveAssignment = async () => {
     // Hard stop: never let an over-100% allocation reach the server.
     if (isOverQuota) {
-      alert(
+      toastError(
         `Total quota is ${assignedQuota}%, which is over 100%. Please reduce one or more centers before saving.`,
       );
       return;
@@ -196,7 +200,7 @@ export default function Services() {
     const missingPoc = assignments.find((item) => !item.poc_email?.trim());
 
     if (missingPoc) {
-      alert(
+      toastError(
         `POC Email is required for ${missingPoc.center_name}. Please fill it in before saving.`,
       );
       return;
@@ -220,20 +224,82 @@ export default function Services() {
         assignments,
       };
 
-      const response = await axios.post(
-        `${BASE_URL}/centers/assign-service`,
-        payload,
-      );
+      const response = await api.post("/centers/assign-service", payload);
 
       if (response.data.success) {
-        alert("Allocation saved successfully");
-
         setShowPanel(false);
       }
     } catch (error) {
-      alert(error.response?.data?.message || "Failed saving");
+      // Error toast handled by API interceptor
     } finally {
       setSaving(false);
+    }
+  };
+
+  const formatScheduleTime = (time) => {
+    if (!time) return "-";
+
+    const [hours, minutes] = time.split(":");
+    const date = new Date();
+
+    date.setHours(Number(hours), Number(minutes), 0);
+
+    return date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+
+  const toTimeInputValue = (time) => {
+    if (!time) return "";
+
+    const [hours, minutes] = time.split(":");
+
+    return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
+  };
+
+  const openEditModal = (service) => {
+    setEditingService(service);
+    setEditScheduleTime(toTimeInputValue(service.schedule_time));
+    setEditBatchSize(String(service.batch_size ?? ""));
+    setShowEditModal(true);
+  };
+
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setEditingService(null);
+    setEditScheduleTime("");
+    setEditBatchSize("");
+  };
+
+  const saveServiceDetails = async () => {
+    if (!editScheduleTime) {
+      toastError("Schedule time is required");
+      return;
+    }
+
+    if (!editBatchSize || Number(editBatchSize) <= 0) {
+      toastError("Batch size must be greater than 0");
+      return;
+    }
+
+    try {
+      setUpdatingService(true);
+
+      const response = await api.put(`/services/update/${editingService.id}`, {
+        schedule_time: editScheduleTime,
+        batch_size: Number(editBatchSize),
+      });
+
+      if (response.data.success) {
+        closeEditModal();
+        fetchServices();
+      }
+    } catch (error) {
+      // Error toast handled by API interceptor
+    } finally {
+      setUpdatingService(false);
     }
   };
 
@@ -294,6 +360,10 @@ export default function Services() {
 
                 <th className="px-6 py-3 text-left">Service</th>
 
+                <th className="px-6 py-3 text-left">Schedule Time</th>
+
+                <th className="px-6 py-3 text-left">Batch Size</th>
+
                 <th className="px-6 py-3 text-right">Action</th>
               </tr>
             </thead>
@@ -311,13 +381,31 @@ export default function Services() {
                     </div>
                   </td>
 
+                  <td className="px-6 py-4 text-gray-600">
+                    {formatScheduleTime(service.schedule_time)}
+                  </td>
+
+                  <td className="px-6 py-4 text-gray-600">
+                    {service.batch_size ?? "-"}
+                  </td>
+
                   <td className="px-6 py-4 text-right">
-                    <button
-                      onClick={() => openDrawer(service)}
-                      className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-lg text-sm"
-                    >
-                      Modify
-                    </button>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => openEditModal(service)}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg text-sm inline-flex items-center gap-1.5"
+                      >
+                        <Pencil size={14} />
+                        Edit
+                      </button>
+
+                      <button
+                        onClick={() => openDrawer(service)}
+                        className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-2 rounded-lg text-sm"
+                      >
+                        Modify
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -331,6 +419,67 @@ export default function Services() {
           {filteredServices.length} service
           {filteredServices.length === 1 ? "" : "s"}
         </p>
+      )}
+
+      {/* Edit Service Modal */}
+
+      {showEditModal && editingService && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl">
+            <div className="flex justify-between items-center mb-5">
+              <h2 className="text-lg font-semibold">
+                Edit Service — {editingService.name}
+              </h2>
+
+              <button onClick={closeEditModal}>✕</button>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">
+                Schedule Time
+              </label>
+
+              <input
+                type="time"
+                className="input-field w-full"
+                value={editScheduleTime}
+                onChange={(e) => setEditScheduleTime(e.target.value)}
+              />
+            </div>
+
+            <div className="mb-5">
+              <label className="block text-sm font-medium mb-2">
+                Batch Size
+              </label>
+
+              <input
+                type="number"
+                min="1"
+                className="input-field w-full"
+                placeholder="Enter batch size"
+                value={editBatchSize}
+                onChange={(e) => setEditBatchSize(e.target.value)}
+              />
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={closeEditModal}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={saveServiceDetails}
+                disabled={updatingService}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 disabled:opacity-50"
+              >
+                {updatingService ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Drawer */}

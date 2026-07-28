@@ -6,7 +6,9 @@ const getServices = async (req, res) => {
     const query = `
       SELECT
         id,
-        name
+        name,
+        schedule_time,
+        batch_size
       FROM services
       WHERE active = TRUE
       ORDER BY id DESC
@@ -129,7 +131,103 @@ const getServiceQuota = async (req, res) => {
     });
   }
 };
+const updateService = async (req, res) => {
+  try {
+    const { service_id } = req.params;
+    const { schedule_time, batch_size } = req.body;
+
+    if (!service_id) {
+      return sendResponse({
+        res,
+        success: false,
+        message: "Service id is required",
+        statusCode: 400,
+      });
+    }
+
+    if (!schedule_time) {
+      return sendResponse({
+        res,
+        success: false,
+        message: "Schedule time is required",
+        statusCode: 400,
+      });
+    }
+
+    if (batch_size == null || Number(batch_size) <= 0) {
+      return sendResponse({
+        res,
+        success: false,
+        message: "Batch size must be greater than 0",
+        statusCode: 400,
+      });
+    }
+
+    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/;
+
+    if (!timeRegex.test(schedule_time)) {
+      return sendResponse({
+        res,
+        success: false,
+        message: "Invalid schedule time format",
+        statusCode: 400,
+      });
+    }
+
+    const normalizedTime =
+      schedule_time.length === 5 ? `${schedule_time}:00` : schedule_time;
+
+    const [service] = await db.query(
+      `SELECT id FROM services WHERE id = ? AND active = TRUE`,
+      [service_id],
+    );
+
+    if (service.length === 0) {
+      return sendResponse({
+        res,
+        success: false,
+        message: "Service not found",
+        statusCode: 404,
+      });
+    }
+
+    await db.query(
+      `
+        UPDATE services
+        SET
+          schedule_time = ?,
+          batch_size = ?
+        WHERE id = ?
+      `,
+      [normalizedTime, Number(batch_size), service_id],
+    );
+
+    return sendResponse({
+      res,
+      success: true,
+      message: "Service updated successfully",
+      statusCode: 200,
+      data: {
+        id: Number(service_id),
+        schedule_time: normalizedTime,
+        batch_size: Number(batch_size),
+      },
+    });
+  } catch (error) {
+    console.error("Error updating service:", error);
+
+    return sendResponse({
+      res,
+      success: false,
+      message: "Failed to update service",
+      statusCode: 500,
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getServices,
   getServiceQuota,
+  updateService,
 };

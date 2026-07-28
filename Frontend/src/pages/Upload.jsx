@@ -11,8 +11,7 @@ import {
   RefreshCcw,
   Calendar,
 } from "lucide-react";
-import axios from "axios";
-import { BASE_URL } from "../config";
+import api from "../lib/api";
 
 const initialForm = {
   jobName: "",
@@ -24,7 +23,7 @@ const initialForm = {
   },
   remove_sub: true,
   remove_unsub: false,
-  days: "",
+  days: 0,
   file: null,
 };
 
@@ -84,28 +83,30 @@ export default function Upload() {
       formData.append("remove_unsub", form.remove_unsub);
       formData.append("days", form.days);
 
-      await axios.post(`${BASE_URL}/files/upload`, formData, {
+      const response = await api.post("/files/upload", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
       });
+
+      if (response.data.success) {
+        setSubmitted(true);
+      }
     } catch (error) {
-      console.error("Error uploading file:", error);
-    } finally {
-      setSubmitted(true);
+      // Error toast handled by API interceptor
     }
   };
 
   const reset = () => {
     setForm(initialForm);
+    setServices([]);
+    setQuota(null);
     setErrors({});
     setSubmitted(false);
   };
   const getServiceQuota = async (serviceId) => {
     try {
-      const response = await axios.get(
-        `${BASE_URL}/services/${serviceId}/quota`,
-      );
+      const response = await api.get(`/services/${serviceId}/quota`);
 
       if (response.data.success) {
         setQuota(response.data.data.centers);
@@ -156,7 +157,7 @@ export default function Upload() {
   useEffect(() => {
     const fetchServices = async () => {
       try {
-        const response = await axios.get(`${BASE_URL}/services/all`);
+        const response = await api.get("/services/all");
 
         if (response.data.success) {
           setServices(response.data.data);
@@ -189,7 +190,7 @@ export default function Upload() {
         </div>
         <div className="card text-left w-full max-w-sm text-sm space-y-3 mt-2">
           {[
-            ["Service", form.service],
+            ["Service", form.service.name],
             ["Scheduled", form.scheduleTime],
             ["Balance Limit", `$${form.balance_limit}`],
             ["File", form.file?.name],

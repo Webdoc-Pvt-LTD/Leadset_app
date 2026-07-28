@@ -15,8 +15,7 @@ import {
   SendIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import axios from "axios";
-import { BASE_URL } from "../config";
+import api from "../lib/api";
 import LoaderSpinner from "../components/loader";
 import { formatNumber, formatDateTime } from "../helper/formatters";
 const statusConfig = {
@@ -38,7 +37,7 @@ const statusConfig = {
     bg: "bg-amber-50 border-amber-200",
     label: "pending",
   },
-  error: {
+  failed: {
     icon: AlertCircle,
     color: "text-red-700",
     bg: "bg-red-50 border-red-200",
@@ -100,7 +99,7 @@ export default function Files() {
     try {
       setLoading(true);
 
-      const res = await axios.get(`${BASE_URL}/files/all`, {
+      const res = await api.get("/files/all", {
         params: {
           page,
           limit,
@@ -137,8 +136,8 @@ export default function Files() {
   const handleDownload = async (sendEmailFlag) => {
     try {
       setLoading(true);
-      const response = await axios.post(
-        `${BASE_URL}/files/export`,
+      const response = await api.post(
+        "/files/export",
         {
           id: selectedFile.id,
           unsub_days: selectedFile.days || 0,
@@ -152,7 +151,7 @@ export default function Files() {
           responseType: "blob",
         },
       );
-      return;
+
       const contentDisposition = response.headers["content-disposition"];
       const baseName = selectedFile.file_name.replace(/\.[^/.]+$/, "");
       let fileName = `export_${baseName}.xlsx`;
@@ -187,21 +186,13 @@ export default function Files() {
         message: emailData.message,
       };
 
-      const response = await axios.post(
-        `${BASE_URL}/files/send-email`,
-        payload,
-      );
+      const response = await api.post("/files/send-email", payload);
 
       if (response.data.success) {
-        alert("Email sent successfully!");
         setShowEmailDrawer(false);
-      } else {
-        alert(response.data.message);
       }
     } catch (error) {
-      console.error(error);
-
-      alert(error.response?.data?.message || "Failed to send email.");
+      // Error toast handled by API interceptor
     }
   };
   if (loading) return <LoaderSpinner />;
@@ -296,6 +287,7 @@ export default function Files() {
               ) : (
                 files?.map((file) => {
                   const cfg = statusConfig[file?.status.toLowerCase()] || {};
+                  console.log(cfg);
                   const Icon = cfg?.icon;
                   return (
                     <tr
@@ -332,7 +324,7 @@ export default function Files() {
                           <Icon
                             size={11}
                             className={
-                              file.status === "processing" ? "animate-spin" : ""
+                              file.status.toLowerCase() === "processing" ? "animate-spin" : ""
                             }
                           />
                           {cfg?.label}
@@ -531,14 +523,14 @@ export default function Files() {
 
               <div className="space-y-4">
                 <strong>Applied Filters</strong>
-                <label className="flex items-center gap-3">
+                <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={selectedFile?.remove_sub ?? false}
+                    checked={!!selectedFile?.remove_sub}
                     onChange={(e) =>
                       setSelectedFile((prev) => ({
                         ...prev,
-                        removeSub: e.target.checked,
+                        remove_sub: e.target.checked,
                       }))
                     }
                     className="w-4 h-4 accent-indigo-600"
@@ -608,9 +600,8 @@ export default function Files() {
                 </button>
                 <button
                   onClick={() => handleDownload(true)}
-                  className={
-                    "inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white hover:bg-indigo-700"
-                  }
+                  className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2.5 text-white font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
+
                   disabled={
                     selectedFile?.status !== "COMPLETED"
                     // || !selectedFile?.days
