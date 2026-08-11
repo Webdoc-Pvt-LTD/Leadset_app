@@ -1,8 +1,17 @@
-import { Search, Briefcase, AlertTriangle, Pencil } from "lucide-react";
+import { Search, Briefcase, AlertTriangle, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import api from "../lib/api";
 import { toastError } from "../helper/toast";
 import LoaderSpinner from "../components/loader";
+
+const MAX_SCHEDULES = 5;
+
+const emptyScheduleForm = () => ({
+  generate_time: "",
+  process_start_time: "",
+  batch_size: "",
+  label: "",
+});
 
 export default function Services() {
   const [services, setServices] = useState([]);
@@ -20,18 +29,17 @@ export default function Services() {
   const [assignments, setAssignments] = useState([]);
   const [saving, setSaving] = useState(false);
 
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [editingService, setEditingService] = useState(null);
-  const [editScheduleTime, setEditScheduleTime] = useState("");
-  const [editBatchSize, setEditBatchSize] = useState("");
-  const [updatingService, setUpdatingService] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleService, setScheduleService] = useState(null);
+  const [schedules, setSchedules] = useState([]);
+  const [loadingSchedules, setLoadingSchedules] = useState(false);
+  const [showScheduleForm, setShowScheduleForm] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState(null);
+  const [scheduleForm, setScheduleForm] = useState(emptyScheduleForm());
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   const isOverQuota = assignedQuota > 100;
   const isFullyAllocated = assignedQuota === 100;
-
-  /*
-    Fetch Services
-  */
 
   const fetchServices = async () => {
     try {
@@ -48,10 +56,6 @@ export default function Services() {
       setLoading(false);
     }
   };
-
-  /*
-    Fetch Centers
-  */
 
   const fetchCenters = async () => {
     try {
@@ -70,11 +74,6 @@ export default function Services() {
     fetchCenters();
   }, []);
 
-  /*
-    Recompute assigned/remaining quota from an assignments array.
-    Centralized so every mutation path (add/remove/edit) stays in sync.
-  */
-
   const recalcQuota = (list) => {
     const total = list.reduce(
       (sum, item) => sum + Number(item.percentage_quota || 0),
@@ -87,10 +86,6 @@ export default function Services() {
     setRemainingQuota(Number((100 - rounded).toFixed(2)));
   };
 
-  /*
-    Open Drawer
-  */
-
   const openDrawer = async (service) => {
     try {
       setSelectedService(service);
@@ -102,19 +97,14 @@ export default function Services() {
         const data = response.data.data;
 
         setAssignedQuota(data.assigned_quota);
-
         setRemainingQuota(data.remaining_quota);
 
         setAssignments(
           data.centers.map((item) => ({
             center_id: item.center_id,
-
             center_name: item.center_name,
-
             percentage_quota: item.percentage_quota,
-
             poc_email: item.poc_email || "",
-
             cc_email: item.cc_email || "",
           })),
         );
@@ -123,10 +113,6 @@ export default function Services() {
       console.log(error);
     }
   };
-
-  /*
-    Add Center
-  */
 
   const addCenter = (centerId) => {
     const center = centers.find((c) => Number(c.id) === Number(centerId));
@@ -144,24 +130,15 @@ export default function Services() {
 
     setAssignments([
       ...assignments,
-
       {
         center_id: center.id,
-
         center_name: center.name,
-
         percentage_quota: "",
-
         poc_email: "",
-
         cc_email: "",
       },
     ]);
   };
-
-  /*
-    Remove Center
-  */
 
   const removeCenter = (index) => {
     const updated = assignments.filter((_, i) => i !== index);
@@ -169,10 +146,6 @@ export default function Services() {
     setAssignments(updated);
     recalcQuota(updated);
   };
-
-  /*
-    Update quota
-  */
 
   const updateQuota = (index, value) => {
     const updated = [...assignments];
@@ -183,12 +156,7 @@ export default function Services() {
     recalcQuota(updated);
   };
 
-  /*
-    Save Allocation
-  */
-
   const saveAssignment = async () => {
-    // Hard stop: never let an over-100% allocation reach the server.
     if (isOverQuota) {
       toastError(
         `Total quota is ${assignedQuota}%, which is over 100%. Please reduce one or more centers before saving.`,
@@ -196,7 +164,6 @@ export default function Services() {
       return;
     }
 
-    // POC email is required for every assigned center.
     const missingPoc = assignments.find((item) => !item.poc_email?.trim());
 
     if (missingPoc) {
@@ -206,7 +173,6 @@ export default function Services() {
       return;
     }
 
-    // Soft warning: allow partial allocation, but make sure it's intentional.
     if (assignedQuota < 100) {
       const proceed = window.confirm(
         `Only ${assignedQuota}% of this service's quota is allocated (${remainingQuota}% remaining unassigned). Save anyway?`,
@@ -220,7 +186,6 @@ export default function Services() {
 
       const payload = {
         service_id: selectedService.id,
-
         assignments,
       };
 
@@ -259,47 +224,143 @@ export default function Services() {
     return `${hours.padStart(2, "0")}:${minutes.padStart(2, "0")}`;
   };
 
-  const openEditModal = (service) => {
-    setEditingService(service);
-    setEditScheduleTime(toTimeInputValue(service.schedule_time));
-    setEditBatchSize(String(service.batch_size ?? ""));
-    setShowEditModal(true);
+  const formatNumber = (value) => {
+    if (value == null || value === "") return "-";
+    return Number(value).toLocaleString();
   };
 
-  const closeEditModal = () => {
-    setShowEditModal(false);
-    setEditingService(null);
-    setEditScheduleTime("");
-    setEditBatchSize("");
+  const loadSchedules = async (serviceId) => {
+    const response = await api.get(`/services/${serviceId}/schedules`);
+
+    if (response.data.success) {
+      setSchedules(response.data.data.schedules || []);
+    }
   };
 
-  const saveServiceDetails = async () => {
-    if (!editScheduleTime) {
-      toastError("Schedule time is required");
+  const openScheduleModal = async (service) => {
+    setScheduleService(service);
+    setShowScheduleModal(true);
+    setShowScheduleForm(false);
+    setEditingSchedule(null);
+    setScheduleForm(emptyScheduleForm());
+
+    try {
+      setLoadingSchedules(true);
+      await loadSchedules(service.id);
+    } catch (error) {
+      console.log(error);
+    } finally {
+      setLoadingSchedules(false);
+    }
+  };
+
+  const closeScheduleModal = () => {
+    setShowScheduleModal(false);
+    setScheduleService(null);
+    setSchedules([]);
+    setShowScheduleForm(false);
+    setEditingSchedule(null);
+    setScheduleForm(emptyScheduleForm());
+    fetchServices();
+  };
+
+  const openAddScheduleForm = () => {
+    if (schedules.length >= MAX_SCHEDULES) {
+      toastError(`Maximum ${MAX_SCHEDULES} file schedules allowed per service`);
       return;
     }
 
-    if (!editBatchSize || Number(editBatchSize) <= 0) {
+    setEditingSchedule(null);
+    setScheduleForm(emptyScheduleForm());
+    setShowScheduleForm(true);
+  };
+
+  const openEditScheduleForm = (schedule) => {
+    setEditingSchedule(schedule);
+    setScheduleForm({
+      generate_time: toTimeInputValue(schedule.generate_time),
+      process_start_time: toTimeInputValue(schedule.process_start_time),
+      batch_size: String(schedule.batch_size ?? ""),
+      label: schedule.label || "",
+    });
+    setShowScheduleForm(true);
+  };
+
+  const cancelScheduleForm = () => {
+    setShowScheduleForm(false);
+    setEditingSchedule(null);
+    setScheduleForm(emptyScheduleForm());
+  };
+
+  const saveSchedule = async () => {
+    if (!scheduleForm.generate_time) {
+      toastError("Generate time is required");
+      return;
+    }
+
+    if (!scheduleForm.process_start_time) {
+      toastError("Process start time is required");
+      return;
+    }
+
+    if (!scheduleForm.batch_size || Number(scheduleForm.batch_size) <= 0) {
       toastError("Batch size must be greater than 0");
       return;
     }
 
-    try {
-      setUpdatingService(true);
+    const payload = {
+      generate_time: scheduleForm.generate_time,
+      process_start_time: scheduleForm.process_start_time,
+      batch_size: Number(scheduleForm.batch_size),
+      label: scheduleForm.label.trim() || null,
+    };
 
-      const response = await api.put(`/services/update/${editingService.id}`, {
-        schedule_time: editScheduleTime,
-        batch_size: Number(editBatchSize),
-      });
+    try {
+      setSavingSchedule(true);
+
+      let response;
+
+      if (editingSchedule) {
+        response = await api.put(
+          `/services/schedules/${editingSchedule.id}`,
+          payload,
+        );
+      } else {
+        response = await api.post(
+          `/services/${scheduleService.id}/schedules`,
+          payload,
+        );
+      }
 
       if (response.data.success) {
-        closeEditModal();
-        fetchServices();
+        setSchedules(response.data.data.schedules || []);
+        cancelScheduleForm();
       }
     } catch (error) {
       // Error toast handled by API interceptor
     } finally {
-      setUpdatingService(false);
+      setSavingSchedule(false);
+    }
+  };
+
+  const deleteSchedule = async (schedule) => {
+    const proceed = window.confirm(
+      `Delete schedule (generate ${formatScheduleTime(schedule.generate_time)}, ${formatNumber(schedule.batch_size)} records)?`,
+    );
+
+    if (!proceed) return;
+
+    try {
+      const response = await api.delete(`/services/schedules/${schedule.id}`);
+
+      if (response.data.success) {
+        setSchedules(response.data.data.schedules || []);
+        if (editingSchedule?.id === schedule.id) {
+          cancelScheduleForm();
+        }
+      }
+    } catch (error) {
+      // Error toast handled by API interceptor
     }
   };
 
@@ -309,17 +370,14 @@ export default function Services() {
 
   return (
     <div className="p-6">
-      {/* Header */}
-
       <div className="flex justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold text-gray-800">Services</h1>
-
-          <p className="text-sm text-gray-500">Manage service center quota</p>
+          <p className="text-sm text-gray-500">
+            Manage service quotas and file generation schedules (max {MAX_SCHEDULES} per service)
+          </p>
         </div>
       </div>
-
-      {/* Search */}
 
       <div className="mb-5 max-w-md relative">
         <Search
@@ -334,8 +392,6 @@ export default function Services() {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
-
-      {/* Table */}
 
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         {loading ? (
@@ -357,13 +413,8 @@ export default function Services() {
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="px-6 py-3 text-left">#</th>
-
                 <th className="px-6 py-3 text-left">Service</th>
-
-                <th className="px-6 py-3 text-left">Schedule Time</th>
-
-                <th className="px-6 py-3 text-left">Batch Size</th>
-
+                <th className="px-6 py-3 text-left">File Schedules</th>
                 <th className="px-6 py-3 text-right">Action</th>
               </tr>
             </thead>
@@ -376,27 +427,29 @@ export default function Services() {
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
                       <Briefcase size={18} className="text-blue-600" />
-
                       {service.name}
                     </div>
                   </td>
 
                   <td className="px-6 py-4 text-gray-600">
-                    {formatScheduleTime(service.schedule_time)}
-                  </td>
-
-                  <td className="px-6 py-4 text-gray-600">
-                    {service.batch_size ?? "-"}
+                    {(service.schedules?.length || 0) > 0 ? (
+                      <span>
+                        {service.schedules.length} / {MAX_SCHEDULES} slot
+                        {service.schedules.length === 1 ? "" : "s"}
+                      </span>
+                    ) : (
+                      <span className="text-amber-600">No schedules</span>
+                    )}
                   </td>
 
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
                       <button
-                        onClick={() => openEditModal(service)}
+                        onClick={() => openScheduleModal(service)}
                         className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg text-sm inline-flex items-center gap-1.5"
                       >
                         <Pencil size={14} />
-                        Edit
+                        Schedules
                       </button>
 
                       <button
@@ -421,75 +474,217 @@ export default function Services() {
         </p>
       )}
 
-      {/* Edit Service Modal */}
-
-      {showEditModal && editingService && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl">
-            <div className="flex justify-between items-center mb-5">
-              <h2 className="text-lg font-semibold">
-                Edit Service — {editingService.name}
-              </h2>
-
-              <button onClick={closeEditModal}>✕</button>
+      {showScheduleModal && scheduleService && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 shadow-xl">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  File Schedules — {scheduleService.name}
+                </h2>
+                <p className="text-sm text-gray-500">
+                  Up to {MAX_SCHEDULES} daily slots: generate file → schedule processing
+                </p>
+              </div>
+              <button onClick={closeScheduleModal}>✕</button>
             </div>
 
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">
-                Schedule Time
-              </label>
+            {loadingSchedules ? (
+              <div className="py-10 flex justify-center">
+                <LoaderSpinner />
+              </div>
+            ) : (
+              <>
+                <div className="flex justify-between items-center mb-4">
+                  <p className="text-sm text-gray-600">
+                    {schedules.length} / {MAX_SCHEDULES} slots used
+                  </p>
 
-              <input
-                type="time"
-                className="input-field w-full"
-                value={editScheduleTime}
-                onChange={(e) => setEditScheduleTime(e.target.value)}
-              />
-            </div>
+                  {!showScheduleForm && (
+                    <button
+                      onClick={openAddScheduleForm}
+                      disabled={schedules.length >= MAX_SCHEDULES}
+                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      <Plus size={14} />
+                      Add schedule
+                    </button>
+                  )}
+                </div>
 
-            <div className="mb-5">
-              <label className="block text-sm font-medium mb-2">
-                Batch Size
-              </label>
+                {schedules.length === 0 && !showScheduleForm && (
+                  <div className="border border-dashed rounded-lg p-8 text-center text-gray-500 mb-4">
+                    No schedules yet. Add one to auto-generate files for this service.
+                  </div>
+                )}
 
-              <input
-                type="number"
-                min="1"
-                className="input-field w-full"
-                placeholder="Enter batch size"
-                value={editBatchSize}
-                onChange={(e) => setEditBatchSize(e.target.value)}
-              />
-            </div>
+                {schedules.length > 0 && (
+                  <div className="border rounded-lg overflow-hidden mb-4">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 border-b">
+                        <tr>
+                          <th className="px-4 py-2 text-left">Generate at</th>
+                          <th className="px-4 py-2 text-left">Process at</th>
+                          <th className="px-4 py-2 text-left">Batch size</th>
+                          <th className="px-4 py-2 text-left">Label</th>
+                          <th className="px-4 py-2 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {schedules.map((schedule) => (
+                          <tr key={schedule.id} className="border-b last:border-b-0">
+                            <td className="px-4 py-3">
+                              {formatScheduleTime(schedule.generate_time)}
+                            </td>
+                            <td className="px-4 py-3">
+                              {formatScheduleTime(schedule.process_start_time)}
+                            </td>
+                            <td className="px-4 py-3">
+                              {formatNumber(schedule.batch_size)}
+                            </td>
+                            <td className="px-4 py-3 text-gray-500">
+                              {schedule.label || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="inline-flex gap-2">
+                                <button
+                                  onClick={() => openEditScheduleForm(schedule)}
+                                  className="text-indigo-600 hover:text-indigo-800"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => deleteSchedule(schedule)}
+                                  className="text-red-600 hover:text-red-800 inline-flex items-center gap-1"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
 
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={closeEditModal}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
+                {showScheduleForm && (
+                  <div className="border rounded-lg p-4 bg-gray-50 mb-4">
+                    <h3 className="font-medium mb-4">
+                      {editingSchedule ? "Edit schedule" : "Add schedule"}
+                    </h3>
 
-              <button
-                onClick={saveServiceDetails}
-                disabled={updatingService}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 disabled:opacity-50"
-              >
-                {updatingService ? "Saving..." : "Save"}
-              </button>
-            </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-2">
+                          Generate file at
+                        </label>
+                        <input
+                          type="time"
+                          className="input-field w-full"
+                          value={scheduleForm.generate_time}
+                          onChange={(e) =>
+                            setScheduleForm({
+                              ...scheduleForm,
+                              generate_time: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-2">
+                          Start processing at
+                        </label>
+                        <input
+                          type="time"
+                          className="input-field w-full"
+                          value={scheduleForm.process_start_time}
+                          onChange={(e) =>
+                            setScheduleForm({
+                              ...scheduleForm,
+                              process_start_time: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-2">
+                          Batch size (records)
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          className="input-field w-full"
+                          placeholder="e.g. 1000000"
+                          value={scheduleForm.batch_size}
+                          onChange={(e) =>
+                            setScheduleForm({
+                              ...scheduleForm,
+                              batch_size: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium mb-2">
+                          Label (optional)
+                        </label>
+                        <input
+                          type="text"
+                          className="input-field w-full"
+                          placeholder="Morning run"
+                          value={scheduleForm.label}
+                          onChange={(e) =>
+                            setScheduleForm({
+                              ...scheduleForm,
+                              label: e.target.value,
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-3">
+                      <button
+                        onClick={cancelScheduleForm}
+                        className="px-4 py-2 border rounded-lg hover:bg-white"
+                      >
+                        Cancel
+                      </button>
+
+                      <button
+                        onClick={saveSchedule}
+                        disabled={savingSchedule}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 disabled:opacity-50"
+                      >
+                        {savingSchedule ? "Saving..." : "Save schedule"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end">
+                  <button
+                    onClick={closeScheduleModal}
+                    className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
-
-      {/* Drawer */}
 
       {showPanel && (
         <div className="fixed inset-0 bg-black/30 z-50">
           <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white p-6 overflow-y-auto">
             <div className="flex justify-between mb-6">
               <h2 className="text-lg font-semibold">{selectedService.name}</h2>
-
               <button onClick={() => setShowPanel(false)}>✕</button>
             </div>
 
@@ -590,8 +785,6 @@ export default function Services() {
                   </button>
                 </div>
 
-                {/* Quota */}
-
                 <label className="label">Percentage Quota</label>
 
                 <input
@@ -601,8 +794,6 @@ export default function Services() {
                   value={item.percentage_quota}
                   onChange={(e) => {
                     const value = e.target.value;
-
-                    // allow max 100 and 2 decimals
                     const regex = /^(100(\.00?)?|([0-9]{1,2})(\.[0-9]{0,2})?)$/;
 
                     if (value === "" || regex.test(value)) {
@@ -611,8 +802,6 @@ export default function Services() {
                   }}
                   placeholder="50.00"
                 />
-
-                {/* POC Email */}
 
                 <label className="label">
                   POC Email <span className="text-red-500">*</span>
@@ -630,9 +819,7 @@ export default function Services() {
                   value={item.poc_email}
                   onChange={(e) => {
                     const updated = [...assignments];
-
                     updated[index].poc_email = e.target.value;
-
                     setAssignments(updated);
                   }}
                 />
@@ -643,8 +830,6 @@ export default function Services() {
                   </p>
                 )}
 
-                {/* CC Email */}
-
                 <label className="label">CC Emails</label>
 
                 <input
@@ -654,9 +839,7 @@ export default function Services() {
                   value={item.cc_email}
                   onChange={(e) => {
                     const updated = [...assignments];
-
                     updated[index].cc_email = e.target.value;
-
                     setAssignments(updated);
                   }}
                 />

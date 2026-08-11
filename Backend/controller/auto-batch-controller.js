@@ -2,18 +2,21 @@ const { sendResponse } = require("../lib/api-response");
 const autoBatch = require("../services/auto-batch");
 
 /**
- * POST /api/auto-batch/create
- * Manually trigger one batch (same logic as cron).
- * Body (optional): { batch_size, service, schedule_time }
+ * POST /api/auto/create
+ * Manually trigger one batch.
+ * Body (optional): { schedule_id, batch_size, service, schedule_time, force }
  */
 const createBatch = async (req, res) => {
   try {
-    const { batch_size, service, schedule_time } = req.body || {};
+    const { batch_size, service, schedule_time, schedule_id, force } =
+      req.body || {};
 
     const batch = await autoBatch.createBatch({
+      scheduleId: schedule_id || null,
       batchSize: batch_size,
       serviceName: service || null,
       scheduleTime: schedule_time || null,
+      force: force !== false,
     });
 
     const pool = await autoBatch.getPoolStats();
@@ -38,12 +41,12 @@ const createBatch = async (req, res) => {
 };
 
 /**
- * GET /api/auto-batch/status
+ * GET /api/auto/status
  */
 const getStatus = async (req, res) => {
   try {
     const pool = await autoBatch.getPoolStats();
-    const services = await autoBatch.getActiveServices();
+    const schedules = await autoBatch.getActiveSchedules();
 
     return sendResponse({
       res,
@@ -52,10 +55,15 @@ const getStatus = async (req, res) => {
       statusCode: 200,
       data: {
         pool,
-        services: services.map((s) => ({
-          name: s.name,
+        schedules: schedules.map((s) => ({
+          id: s.id,
+          service: s.service_name,
+          generate_time: autoBatch.normalizeTimeString(s.generate_time),
+          process_start_time: autoBatch.normalizeTimeString(
+            s.process_start_time,
+          ),
           batch_size: s.batch_size,
-          schedule_time: s.schedule_time,
+          label: s.label,
         })),
         defaults: {
           batch_size: autoBatch.DEFAULT_BATCH_SIZE,
@@ -63,7 +71,8 @@ const getStatus = async (req, res) => {
           remove_sub: true,
           remove_unsub: false,
           days: autoBatch.DEFAULT_DAYS,
-          cron: process.env.AUTO_BATCH_CRON || "0 * * * *",
+          max_schedules_per_service: autoBatch.MAX_SCHEDULES_PER_SERVICE,
+          cron: process.env.AUTO_BATCH_CRON || "* * * * *",
           enabled: process.env.AUTO_BATCH_ENABLED !== "false",
         },
       },
@@ -81,13 +90,15 @@ const getStatus = async (req, res) => {
 };
 
 /**
- * POST /api/auto-batch/run-now
- * Create one batch file per active service (same logic as cron).
+ * POST /api/auto/run-now
+ * Force-generate files for all active schedule slots.
  */
 const runNow = async (req, res) => {
   try {
-    const batches = await autoBatch.createBatchesForAllServices();
+    const force = req.body?.force !== false;
+    const batches = await autoBatch.createBatchesForAllSchedules({ force });
     const pool = await autoBatch.getPoolStats();
+
     return sendResponse({
       res,
       success: true,

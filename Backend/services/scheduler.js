@@ -150,7 +150,7 @@ if (!SCHEDULER_ENABLED) {
   console.log("⏸️ File scheduler disabled (SCHEDULER_ENABLED=false)");
 } else {
   console.log(`👷 File scheduler worker: ${WORKER_ID}`);
-  cron.schedule("* * * * *", async () => {
+  cron.schedule("*/2 * * * *", async () => {
     if (runningJobs >= MAX_CONCURRENT_JOBS) {
       console.log(
         `⏳ At capacity (${runningJobs}/${MAX_CONCURRENT_JOBS}), skipping tick`,
